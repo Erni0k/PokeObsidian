@@ -1,0 +1,21 @@
+# build / deps
+node_modules/
+main.js
+*.js.map
+
+# obsidian test vault artifacts
+data.json
+cache.json
+price-history.json
+
+# os / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# claude code
+.claude/
+CLAUDE.md
+.claude-*/
+**/memory/

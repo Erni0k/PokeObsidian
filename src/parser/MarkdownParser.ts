@@ -1,0 +1,228 @@
+import type PokemonCollectionPlugin from "../main";
+import type { CardKey, CollectionEntry, Variant } from "../types";
+
+export const START_MARKER = "<!-- pokemon-collection:start -->";
+export const END_MARKER = "<!-- pokemon-collection:end -->";
+
+export const TABLE_COLUMNS = [
+	"Card",
+	"Set",
+	"Number",
+	"Variant",
+	"Lang",
+	"Qty",
+	"Price",
+	"ID",
+] as const;
+
+const TABLE_HEADER = `| ${TABLE_COLUMNS.join(" | ")} |`;
+const TABLE_SEP = `| ${TABLE_COLUMNS.map(() => "---").join(" | ")} |`;
+
+/** Region of a note occupied by a collection section (character offsets). */
+export interface SectionRegion {
+	/** Offset of the START marker. */
+	start: number;
+	/** Offset just past the END marker. */
+	end: number;
+	/** Raw text between (and excluding) the markers. */
+	inner: string;
+}
+
+/**
+ * Reads and writes the Markdown collection table. The table is the source of
+ * truth; this module never mutates anything outside the marked section.
+ */
+export class MarkdownParser {
+	private plugin: PokemonCollectionPlugin;
+
+	constructor(plugin: PokemonCollectionPlugin) {
+		this.plugin = plugin;
+	}
+
+	// --- key + value formatting --------------------------------------------
+
+	keyOf(id: string, variant: Variant): CardKey {
+		return `${id}:${variant}`;
+	}
+
+	/** Split a `id:variant` key on the FIRST colon (variant may contain colons). */
+	splitKey(key: CardKey): { id: string; variant: string } {
+		const idx = key.indexOf(":");
+		if (idx < 0) return { id: key, variant: "normal" };
+		return { id: key.slice(0, idx), variant: key.slice(idx + 1) };
+	}
+
+	formatPrice(price: number | undefined): string {
+		if (price === undefined || !Number.isFinite(price)) return "";
+		return `€${price.toFixed(2)}`;
+	}
+
+	parsePrice(text: string): number | undefined {
+		const cleaned = text.replace(/[^0-9.,-]/g, "").replace(",", ".");
+		if (!cleaned) return undefined;
+		const n = Number.parseFloat(cleaned);
+		return Number.isFinite(n) ? n : undefined;
+	}
+
+	// --- section discovery --------------------------------------------------
+
+	findSection(content: string): SectionRegion | null {
+		const start = content.indexOf(START_MARKER);
+		if (start < 0) return null;
+		const endMarker = content.indexOf(END_MARKER, start + START_MARKER.length);
+		if (endMarker < 0) return null;
+		const end = endMarker + END_MARKER.length;
+		const inner = content.slice(start + START_MARKER.length, endMarker);
+		return { start, end, inner };
+	}
+
+	hasSection(content: string): boolean {
+		return this.findSection(content) !== null;
+	}
+
+	// --- parsing ------------------------------------------------------------
+
+	/** Parse all entries from a note's collection section (empty if none). */
+	parseEntries(content: string): CollectionEntry[] {
+		const section = this.findSection(content);
+		if (!section) return [];
+		return this.parseRows(section.inner);
+	}
+
+	private parseRows(block: string): CollectionEntry[] {
+		const entries: CollectionEntry[] = [];
+		for (const line of block.split(/\r?\n/)) {
+			const entry = this.parseRow(line);
+			if (entry) entries.push(entry);
+		}
+		return entries;
+	}
+
+	/**
+	 * Parse a single Markdown table line into an entry, or null if the line is
+	 * not a data row (blank, header, separator, or malformed). Public so the
+	 * "update selected card" command can identify the row under the cursor.
+	 */
+	parseRow(line: string): CollectionEntry | null {
+		const trimmed = line.trim();
+		if (!trimmed.startsWith("|")) return null;
+		const cells = this.splitRow(trimmed);
+		// Skip header + separator rows.
+		if (cells[0]?.toLowerCase() === "card") return null;
+		if (/^-{2,}$/.test(cells[0]?.replace(/\s/g, "") ?? "")) return null;
+		if (cells.length < TABLE_COLUMNS.length) return null;
+
+		const [name, setName, number, variant, language, qtyStr, priceStr, idCell] =
+			cells;
+
+		let id = idCell?.trim() ?? "";
+		let variantResolved = variant?.trim() || "normal";
+		// The ID column is authoritative for identity when present.
+		if (id.includes(":")) {
+			const parsed = this.splitKey(id);
+			id = parsed.id;
+			variantResolved = parsed.variant;
+		}
+		if (!id) return null;
+		const key = this.keyOf(id, variantResolved);
+
+		const quantity = Math.max(
+			0,
+			Number.parseInt(qtyStr?.replace(/[^0-9]/g, "") || "0", 10) || 0
+		);
+
+		return {
+			id,
+			name: name?.trim() ?? "",
+			setName: setName?.trim() ?? "",
+			number: number?.trim() ?? "",
+			variant: variantResolved,
+			language: language?.trim() || this.defaultLang(),
+			quantity,
+			price: this.parsePrice(priceStr ?? ""),
+			key,
+		};
+	}
+
+	/** Split a Markdown table row into trimmed cell values (handles `\|`). */
+	private splitRow(row: string): string[] {
+		const parts = row.split(/(?<!\\)\|/);
+		// Drop the empty leading/trailing cells produced by the outer pipes.
+		if (parts.length && parts[0].trim() === "") parts.shift();
+		if (parts.length && parts[parts.length - 1].trim() === "") parts.pop();
+		return parts.map((c) => c.replace(/\\\|/g, "|").trim());
+	}
+
+	// --- rendering ----------------------------------------------------------
+
+	private escape(value: string): string {
+		return value.replace(/\|/g, "\\|");
+	}
+
+	private renderRow(e: CollectionEntry): string {
+		const cells = [
+			this.escape(e.name),
+			this.escape(e.setName),
+			this.escape(e.number),
+			this.escape(String(e.variant)),
+			this.escape(e.language),
+			String(e.quantity),
+			this.formatPrice(e.price),
+			this.escape(e.key),
+		];
+		return `| ${cells.join(" | ")} |`;
+	}
+
+	/** Full section text (markers + table) for the given entries. */
+	renderSection(entries: CollectionEntry[]): string {
+		const rows = entries.map((e) => this.renderRow(e));
+		const table = [TABLE_HEADER, TABLE_SEP, ...rows].join("\n");
+		return `${START_MARKER}\n${table}\n${END_MARKER}`;
+	}
+
+	// --- mutation helpers ---------------------------------------------------
+
+	/**
+	 * Merge `entry` into the list: if a row with the same key exists, add
+	 * `addQty` to its quantity (and refresh its price if provided); otherwise
+	 * append. Returns a new array.
+	 */
+	upsert(
+		entries: CollectionEntry[],
+		entry: CollectionEntry,
+		addQty: number
+	): CollectionEntry[] {
+		const next = entries.slice();
+		const idx = next.findIndex((e) => e.key === entry.key);
+		if (idx >= 0) {
+			const existing = next[idx];
+			next[idx] = {
+				...existing,
+				quantity: existing.quantity + addQty,
+				price: entry.price ?? existing.price,
+			};
+		} else {
+			next.push({ ...entry, quantity: addQty });
+		}
+		return next;
+	}
+
+	/**
+	 * Replace the collection section in `content` with a table for `entries`.
+	 * Requires an existing section; returns null if none is present so the
+	 * caller can decide where to insert a fresh one.
+	 */
+	replaceSection(
+		content: string,
+		entries: CollectionEntry[]
+	): string | null {
+		const section = this.findSection(content);
+		if (!section) return null;
+		const rendered = this.renderSection(entries);
+		return content.slice(0, section.start) + rendered + content.slice(section.end);
+	}
+
+	private defaultLang(): string {
+		return (this.plugin.settings.preferredLanguage || "en").toUpperCase();
+	}
+}

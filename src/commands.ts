@@ -1,0 +1,226 @@
+import { Editor, MarkdownView, Notice, TFile } from "obsidian";
+import type PokemonCollectionPlugin from "./main";
+import type { CardKey, CollectionEntry } from "./types";
+import { CardSearchModal } from "./ui/CardSearchModal";
+
+/** Registers all plugin commands and holds their implementations. */
+export class CommandController {
+	private plugin: PokemonCollectionPlugin;
+
+	constructor(plugin: PokemonCollectionPlugin) {
+		this.plugin = plugin;
+	}
+
+	register(): void {
+		const plugin = this.plugin;
+
+		plugin.addCommand({
+			id: "add-card",
+			name: "Add card",
+			callback: () => this.addCard(),
+		});
+
+		plugin.addCommand({
+			id: "update-selected-card",
+			name: "Update selected card price",
+			editorCallback: (editor) => this.updateSelectedCard(editor),
+		});
+
+		plugin.addCommand({
+			id: "update-note-prices",
+			name: "Update current note prices",
+			editorCallback: (editor) => this.updateNotePrices(editor),
+		});
+
+		plugin.addCommand({
+			id: "update-all-prices",
+			name: "Update all collection prices",
+			callback: () => this.updateAllPrices(),
+		});
+	}
+
+	// --- Add card -----------------------------------------------------------
+
+	private addCard(): void {
+		const view = this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
+		if (!view) {
+			new Notice("Open a note first to add a card into it.");
+			return;
+		}
+		const editor = view.editor;
+
+		new CardSearchModal(this.plugin, (entry, addQty) => {
+			this.insertEntry(editor, entry, addQty);
+		}).open();
+	}
+
+	private insertEntry(
+		editor: Editor,
+		entry: CollectionEntry,
+		addQty: number
+	): void {
+		const md = this.plugin.markdown;
+		const content = editor.getValue();
+
+		if (md.hasSection(content)) {
+			const entries = md.parseEntries(content);
+			const updated = md.upsert(entries, entry, addQty);
+			const newContent = md.replaceSection(content, updated);
+			if (newContent) this.setEditorValue(editor, newContent);
+		} else {
+			// No section yet: insert a fresh one at the cursor.
+			const section = md.renderSection([{ ...entry, quantity: addQty }]);
+			editor.replaceSelection(`\n${section}\n`);
+		}
+	}
+
+	/** Replace the whole document while keeping the cursor position stable. */
+	private setEditorValue(editor: Editor, value: string): void {
+		const cursor = editor.getCursor();
+		editor.setValue(value);
+		editor.setCursor(
+			Math.min(cursor.line, editor.lineCount() - 1),
+			cursor.ch
+		);
+	}
+
+	// --- Update selected card ----------------------------------------------
+
+	private async updateSelectedCard(editor: Editor): Promise<void> {
+		const md = this.plugin.markdown;
+		const line = editor.getLine(editor.getCursor().line);
+		const row = md.parseRow(line);
+		if (!row) {
+			new Notice("Place the cursor on a card row in the collection table.");
+			return;
+		}
+
+		const notice = new Notice(`Updating ${row.name}…`, 0);
+		const price = await this.refreshKey(row.key);
+		notice.hide();
+
+		const content = editor.getValue();
+		const entries = md
+			.parseEntries(content)
+			.map((e) => (e.key === row.key ? { ...e, price } : e));
+		const newContent = md.replaceSection(content, entries);
+		if (newContent) this.setEditorValue(editor, newContent);
+
+		new Notice(
+			price !== undefined
+				? `${row.name}: ${md.formatPrice(price)}`
+				: `No price available for ${row.name}.`
+		);
+	}
+
+	// --- Update current note -----------------------------------------------
+
+	private async updateNotePrices(editor: Editor): Promise<void> {
+		const md = this.plugin.markdown;
+		const content = editor.getValue();
+		if (!md.hasSection(content)) {
+			new Notice("This note has no Pokémon collection table.");
+			return;
+		}
+		const entries = md.parseEntries(content);
+		const keys = uniqueKeys(entries);
+
+		const notice = new Notice(`Updating ${keys.length} cards…`, 0);
+		const priceMap = await this.refreshKeys(keys);
+		notice.hide();
+
+		const updated = entries.map((e) => ({
+			...e,
+			price: priceMap.get(e.key) ?? e.price,
+		}));
+		const newContent = md.replaceSection(content, updated);
+		if (newContent) this.setEditorValue(editor, newContent);
+
+		new Notice("Note prices updated.");
+	}
+
+	// --- Update all + snapshot ---------------------------------------------
+
+	async updateAllPrices(): Promise<void> {
+		const md = this.plugin.markdown;
+		const files = await this.plugin.collection.getCollectionFiles();
+		if (!files.length) {
+			new Notice("No collection notes found in the configured folder.");
+			return;
+		}
+
+		// First pass: read notes and collect every distinct key.
+		const notes: Array<{ file: TFile; content: string; entries: CollectionEntry[] }> =
+			[];
+		const allKeys = new Set<CardKey>();
+		for (const file of files) {
+			const content = await this.plugin.app.vault.read(file);
+			const entries = md.parseEntries(content);
+			notes.push({ file, content, entries });
+			for (const e of entries) allKeys.add(e.key);
+		}
+
+		const notice = new Notice(
+			`Updating prices for ${allKeys.size} cards…`,
+			0
+		);
+		const priceMap = await this.refreshKeys([...allKeys]);
+
+		// Second pass: rewrite each note and tally the portfolio value.
+		let totalValue = 0;
+		let totalCards = 0;
+		const uniq = new Set<CardKey>();
+
+		for (const note of notes) {
+			const updated = note.entries.map((e) => ({
+				...e,
+				price: priceMap.get(e.key) ?? e.price,
+			}));
+			const newContent = md.replaceSection(note.content, updated);
+			if (newContent && newContent !== note.content) {
+				await this.plugin.app.vault.modify(note.file, newContent);
+			}
+			for (const e of updated) {
+				totalValue += e.quantity * (e.price ?? 0);
+				totalCards += e.quantity;
+				uniq.add(e.key);
+			}
+		}
+
+		await this.plugin.cache.addSnapshot({
+			timestamp: new Date().toISOString(),
+			totalValue,
+			totalCards,
+			uniqueCards: uniq.size,
+			currency: this.plugin.price.currency,
+		});
+
+		notice.hide();
+		new Notice(
+			`Updated ${uniq.size} cards. Collection value: €${totalValue.toFixed(
+				2
+			)}.`
+		);
+	}
+
+	// --- shared price refresh ----------------------------------------------
+
+	private async refreshKey(key: CardKey): Promise<number | undefined> {
+		const { id, variant } = this.plugin.markdown.splitKey(key);
+		return this.plugin.price.refreshPrice(id, variant);
+	}
+
+	private async refreshKeys(
+		keys: CardKey[]
+	): Promise<Map<CardKey, number | undefined>> {
+		const map = new Map<CardKey, number | undefined>();
+		for (const key of keys) {
+			map.set(key, await this.refreshKey(key));
+		}
+		return map;
+	}
+}
+
+function uniqueKeys(entries: CollectionEntry[]): CardKey[] {
+	return [...new Set(entries.map((e) => e.key))];
+}

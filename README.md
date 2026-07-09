@@ -1,0 +1,95 @@
+# Pokémon Collection Manager for Obsidian
+
+Manage a Pokémon TCG collection directly inside your Obsidian vault, powered by the [TCGdex API](https://tcgdex.dev/). Cards are stored as a portable Markdown table; everything else (images, rarity, prices, history) lives in JSON caches next to the plugin.
+
+## Design principles
+
+- **Markdown is the source of truth.** Each collection note holds a Markdown table between hidden markers. You can edit it by hand and nothing breaks.
+- **JSON is only a cache.** Card metadata, market prices and portfolio value snapshots are cached under `.obsidian/plugins/pokemon-collection/`.
+- **Works offline.** API responses are cached with a TTL and reused when the network is unavailable.
+- **Mobile-friendly.** All network calls go through Obsidian's `requestUrl`, so the plugin works on desktop and mobile.
+
+## Features
+
+### Add cards
+Command **“Pokémon Collection: Add card”**:
+1. Search TCGdex by **name**, **number** and/or **set**.
+2. Pick a card, then choose a **variant** — the variants TCGdex flags for that card (Normal, Reverse Holo, Holo, First Edition, Promo) plus a free-text **custom variant** (Full Art, Secret Rare, …).
+3. Set **language**, **quantity** and **price** (auto-filled from Cardmarket).
+4. The card is inserted into the active note. Adding a card that already exists **increments its quantity**.
+
+### Collection table
+The table is written between `<!-- pokemon-collection:start -->` and `<!-- pokemon-collection:end -->` markers, so the plugin only ever touches that region:
+
+```markdown
+<!-- pokemon-collection:start -->
+| Card | Set | Number | Variant | Lang | Qty | Price | ID |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Pikachu | Base Set | 58 | reverse | EN | 2 | €25.41 | base1-58:reverse |
+<!-- pokemon-collection:end -->
+```
+
+The **ID** column (`tcgdexId:variant`) is the stable key that joins each row to the cache. If you delete it, the plugin falls back to matching by set + number + variant.
+
+### Price updates
+- **Update selected card price** — the row under the cursor.
+- **Update current note prices** — every row in the active note.
+- **Update all collection prices** — every note in the collection folder, and records a portfolio value snapshot for the history chart.
+
+Prices come from TCGdex's embedded **Cardmarket** data (EUR) via an abstracted `PriceProvider` interface, so other providers can be added later.
+
+### Dashboard
+Command **“Open Pokémon Collection Dashboard”** (or the ribbon icon) opens a panel that aggregates every collection note in the configured folder:
+
+- **Statistics:** total cards, unique cards, total value, average value, most expensive card, largest set, sets owned.
+- **Charts (Chart.js):** collection value over time, most valuable cards, collection by set, collection by rarity, collection growth.
+
+## Settings
+
+| Setting | Default | Notes |
+| --- | --- | --- |
+| Preferred language | `en` | Used for all TCGdex lookups |
+| Currency | `EUR` | Fixed (Cardmarket source) in v1 |
+| Price provider | TCGdex — Cardmarket | Abstracted for future providers |
+| Collection folder | `Pokemon` | Scanned by the dashboard; blank = whole vault |
+| Default quantity | `1` | Added per card |
+| Auto-update interval | `0` (off) | Minutes between automatic price refreshes |
+| Cache duration | `24` h | Freshness window for API responses |
+| Enable image previews | off | Show card images in modals |
+| Image size | `200` px | Preview width |
+
+## Development
+
+```bash
+npm install
+npm run dev     # watch build → main.js
+npm run build   # type-check + production bundle
+```
+
+Then symlink/copy `main.js`, `manifest.json` and `styles.css` into
+`<vault>/.obsidian/plugins/pokemon-collection/` and enable the plugin.
+
+## Architecture
+
+```
+src/
+  main.ts                  plugin entry, wiring, dashboard activation
+  types.ts                 data models + TCGdex response shapes
+  settings.ts              settings + settings tab
+  commands.ts              command registration & implementations
+  parser/MarkdownParser.ts read/write the collection table (source of truth)
+  services/
+    ApiService.ts          TCGdex REST client over requestUrl (+ cache)
+    CacheService.ts        cache.json / meta.json / price-history.json
+    PriceService.ts        price provider abstraction (Cardmarket/EUR)
+    CollectionService.ts   folder scan + statistics aggregation
+  ui/
+    CardSearchModal.ts     search step
+    VariantSelectorModal.ts variant / language / qty / price step
+    DashboardView.ts       stats + charts
+    charts.ts              Chart.js wrappers
+```
+
+## Roadmap (stretch goals, not in v1)
+
+CSV import/export, value reports, OCR/barcode scanning, duplicate detection, wishlist & trade lists, deck builder, per-card price history chart, Git sync, bulk add, tags, smart search, per-generation stats, missing cards / set completion %.

@@ -1,0 +1,10 @@
+{
+	"id": "pokemon-collection",
+	"name": "Pokémon Collection Manager",
+	"version": "1.0.0",
+	"minAppVersion": "1.5.0",
+	"description": "Manage a Pokémon TCG collection inside your vault using the TCGdex API. Search cards, track variants, prices and view a dashboard.",
+	"author": "PokeObsidian",
+	"authorUrl": "",
+	"isDesktopOnly": false
+}
