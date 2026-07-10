@@ -168,6 +168,19 @@ export class VariantSelectorModal extends Modal {
 	}
 
 	private async confirm(): Promise<void> {
+		try {
+			await this.doConfirm();
+		} catch (err) {
+			console.error("[pokemon-collection] failed to add card", err);
+			new Notice(
+				`Could not add card: ${
+					err instanceof Error ? err.message : String(err)
+				}`
+			);
+		}
+	}
+
+	private async doConfirm(): Promise<void> {
 		const variant = this.resolvedVariant();
 		const id = this.card.id;
 		const key = this.plugin.markdown.keyOf(id, variant);
