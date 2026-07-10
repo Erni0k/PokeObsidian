@@ -54,6 +54,17 @@ export class CommandController {
 
 	// --- Sort ---------------------------------------------------------------
 
+	/** Apply the configured auto-sort, if enabled; otherwise return unchanged. */
+	private maybeAutoSort(entries: CollectionEntry[]): CollectionEntry[] {
+		const s = this.plugin.settings;
+		if (!s.autoSort) return entries;
+		return this.plugin.markdown.sortEntries(
+			entries,
+			s.autoSortField,
+			s.autoSortDirection
+		);
+	}
+
 	private sortTable(editor: Editor): void {
 		const md = this.plugin.markdown;
 		const content = editor.getValue();
@@ -124,7 +135,7 @@ export class CommandController {
 
 		if (md.hasSection(content)) {
 			const entries = md.parseEntries(content);
-			const updated = md.upsert(entries, entry, addQty);
+			const updated = this.maybeAutoSort(md.upsert(entries, entry, addQty));
 			const newContent = md.replaceSection(content, updated);
 			if (newContent) this.setEditorValue(editor, newContent);
 		} else {
@@ -160,9 +171,11 @@ export class CommandController {
 		notice.hide();
 
 		const content = editor.getValue();
-		const entries = md
-			.parseEntries(content)
-			.map((e) => (e.key === row.key ? { ...e, price } : e));
+		const entries = this.maybeAutoSort(
+			md
+				.parseEntries(content)
+				.map((e) => (e.key === row.key ? { ...e, price } : e))
+		);
 		const newContent = md.replaceSection(content, entries);
 		if (newContent) this.setEditorValue(editor, newContent);
 
@@ -189,10 +202,12 @@ export class CommandController {
 		const priceMap = await this.refreshKeys(keys);
 		notice.hide();
 
-		const updated = entries.map((e) => ({
-			...e,
-			price: priceMap.get(e.key) ?? e.price,
-		}));
+		const updated = this.maybeAutoSort(
+			entries.map((e) => ({
+				...e,
+				price: priceMap.get(e.key) ?? e.price,
+			}))
+		);
 		const newContent = md.replaceSection(content, updated);
 		if (newContent) this.setEditorValue(editor, newContent);
 
@@ -232,10 +247,12 @@ export class CommandController {
 		const uniq = new Set<CardKey>();
 
 		for (const note of notes) {
-			const updated = note.entries.map((e) => ({
-				...e,
-				price: priceMap.get(e.key) ?? e.price,
-			}));
+			const updated = this.maybeAutoSort(
+				note.entries.map((e) => ({
+					...e,
+					price: priceMap.get(e.key) ?? e.price,
+				}))
+			);
 			const newContent = md.replaceSection(note.content, updated);
 			if (newContent && newContent !== note.content) {
 				await this.plugin.app.vault.modify(note.file, newContent);

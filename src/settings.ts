@@ -1,5 +1,10 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
 import type PokemonCollectionPlugin from "./main";
+import {
+	SORT_FIELD_LABELS,
+	SortDirection,
+	SortField,
+} from "./parser/MarkdownParser";
 
 /** Languages supported by the TCGdex API. */
 export const SUPPORTED_LANGUAGES = [
@@ -42,6 +47,12 @@ export interface PokemonCollectionSettings {
 	enableImagePreviews: boolean;
 	/** Folder scanned by the dashboard for collection notes. */
 	collectionFolder: string;
+	/** Keep collection tables sorted automatically after every change. */
+	autoSort: boolean;
+	/** Field used for auto-sorting. */
+	autoSortField: SortField;
+	/** Direction used for auto-sorting. */
+	autoSortDirection: SortDirection;
 }
 
 export const DEFAULT_SETTINGS: PokemonCollectionSettings = {
@@ -54,6 +65,9 @@ export const DEFAULT_SETTINGS: PokemonCollectionSettings = {
 	imageSize: 200,
 	enableImagePreviews: false,
 	collectionFolder: "Pokemon",
+	autoSort: false,
+	autoSortField: "name",
+	autoSortDirection: "asc",
 };
 
 export class PokemonCollectionSettingTab extends PluginSettingTab {
@@ -122,6 +136,48 @@ export class PokemonCollectionSettingTab extends PluginSettingTab {
 						this.plugin.settings.collectionFolder = value.trim();
 						await this.plugin.saveSettings();
 					});
+			});
+
+		new Setting(containerEl)
+			.setName("Keep table sorted")
+			.setDesc(
+				"Automatically re-sort the collection table after adding a card or updating prices."
+			)
+			.addToggle((toggle) => {
+				toggle
+					.setValue(this.plugin.settings.autoSort)
+					.onChange(async (value) => {
+						this.plugin.settings.autoSort = value;
+						await this.plugin.saveSettings();
+					});
+			});
+
+		new Setting(containerEl)
+			.setName("Auto-sort field")
+			.setDesc("Field used when \"Keep table sorted\" is on.")
+			.addDropdown((dd) => {
+				for (const key of Object.keys(SORT_FIELD_LABELS) as SortField[]) {
+					dd.addOption(key, SORT_FIELD_LABELS[key]);
+				}
+				dd.setValue(this.plugin.settings.autoSortField).onChange(
+					async (value) => {
+						this.plugin.settings.autoSortField = value as SortField;
+						await this.plugin.saveSettings();
+					}
+				);
+			});
+
+		new Setting(containerEl)
+			.setName("Auto-sort direction")
+			.addDropdown((dd) => {
+				dd.addOption("asc", "Ascending (A→Z, low→high)");
+				dd.addOption("desc", "Descending (Z→A, high→low)");
+				dd.setValue(this.plugin.settings.autoSortDirection).onChange(
+					async (value) => {
+						this.plugin.settings.autoSortDirection = value as SortDirection;
+						await this.plugin.saveSettings();
+					}
+				);
 			});
 
 		new Setting(containerEl)
