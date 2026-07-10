@@ -100,6 +100,18 @@ export class ApiService {
 		return await this.get<TcgdexSetFull>(path);
 	}
 
+	/** The set id embedded in a card id ("sv10-021" → "sv10"). */
+	setIdFromCardId(cardId: string): string {
+		const i = cardId.indexOf("-");
+		return i > 0 ? cardId.slice(0, i) : cardId;
+	}
+
+	/** The set's short code (abbreviation.official, e.g. "DRI"), if known. */
+	async setAbbreviation(setId: string): Promise<string | undefined> {
+		const set = await this.getSet(setId);
+		return set?.abbreviation?.official;
+	}
+
 	/**
 	 * Best Cardmarket single-card URL for a card. Fetches the set to obtain the
 	 * abbreviation and appends the `{ABBR}{Number}` suffix (e.g. Furret-DAA136).

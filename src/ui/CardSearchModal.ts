@@ -20,6 +20,8 @@ export class CardSearchModal extends Modal {
 	private setValue = "";
 	private resultsEl!: HTMLElement;
 	private searchTimer: number | null = null;
+	/** Dedupes set-abbreviation lookups across result rows. */
+	private abbrCache = new Map<string, Promise<string | undefined>>();
 
 	constructor(
 		plugin: PokemonCollectionPlugin,
@@ -130,6 +132,16 @@ export class CardSearchModal extends Modal {
 		}
 	}
 
+	/** Get the set's short code, caching the in-flight promise per set. */
+	private abbr(setId: string): Promise<string | undefined> {
+		let p = this.abbrCache.get(setId);
+		if (!p) {
+			p = this.plugin.api.setAbbreviation(setId);
+			this.abbrCache.set(setId, p);
+		}
+		return p;
+	}
+
 	private renderResults(results: TcgdexCardBrief[]): void {
 		this.resultsEl.empty();
 		if (!results.length) {
@@ -159,9 +171,16 @@ export class CardSearchModal extends Modal {
 				text: card.name,
 				cls: "pokemon-collection-result-name",
 			});
-			label.createEl("span", {
-				text: `#${card.localId ?? "?"} · ${card.id}`,
+			const metaEl = label.createEl("span", {
+				text: `#${card.localId ?? "?"} · `,
 				cls: "pokemon-collection-result-meta",
+			});
+			// Show the set's short code (e.g. DRI); fetched lazily, with the
+			// set id as a placeholder until the abbreviation resolves.
+			const setId = this.plugin.api.setIdFromCardId(card.id);
+			const codeEl = metaEl.createSpan({ text: setId.toUpperCase() });
+			void this.abbr(setId).then((code) => {
+				if (code) codeEl.setText(code);
 			});
 
 			row.onClickEvent(() => this.pickCard(card));
