@@ -11,6 +11,7 @@ import { CollectionService } from "./services/CollectionService";
 import { MarkdownParser } from "./parser/MarkdownParser";
 import { CommandController } from "./commands";
 import { DashboardBlock } from "./ui/DashboardBlock";
+import { registerTableSort } from "./ui/tableSort";
 
 /** Legacy sidebar view type — detached on load so old leaves don't error. */
 const LEGACY_DASHBOARD_VIEW_TYPE = "pokemon-collection-dashboard";
@@ -54,6 +55,9 @@ export default class PokemonCollectionPlugin extends Plugin {
 				await child.render();
 			}
 		);
+
+		// Clickable column headers to sort collection tables in Reading view.
+		registerTableSort(this);
 
 		this.addSettingTab(new PokemonCollectionSettingTab(this.app, this));
 

@@ -168,3 +168,17 @@
 	font-weight: 700;
 	white-space: nowrap;
 }
+
+/* Clickable sortable table headers (Reading view) */
+th.pokemon-sortable {
+	cursor: pointer;
+	user-select: none;
+}
+
+th.pokemon-sortable:hover {
+	text-decoration: underline;
+}
+
+.pokemon-sort-arrow {
+	opacity: 0.8;
+}
