@@ -59,6 +59,19 @@ export class VariantSelectorModal extends Modal {
 	}
 
 	onOpen(): void {
+		try {
+			this.build();
+		} catch (err) {
+			console.error("[pokemon-collection] variant modal render failed", err);
+			new Notice(
+				`Variant selector failed: ${
+					err instanceof Error ? err.message : String(err)
+				}`
+			);
+		}
+	}
+
+	private build(): void {
 		const { contentEl } = this;
 		contentEl.empty();
 		contentEl.addClass("pokemon-collection-modal");

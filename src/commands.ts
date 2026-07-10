@@ -121,53 +121,88 @@ export class CommandController {
 	// --- Add card -----------------------------------------------------------
 
 	private addCard(): void {
-		const view = this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
-		if (!view) {
+		const file = this.plugin.app.workspace.getActiveFile();
+		if (!file || file.extension !== "md") {
 			new Notice("Open a note first to add a card into it.");
 			return;
 		}
-		const editor = view.editor;
 
 		new CardSearchModal(this.plugin, (entry, addQty) => {
-			this.insertEntry(editor, entry, addQty);
+			void this.insertEntry(file, entry, addQty);
 		}).open();
 	}
 
 	private addCardFromLink(): void {
-		const view = this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
-		if (!view) {
+		const file = this.plugin.app.workspace.getActiveFile();
+		if (!file || file.extension !== "md") {
 			new Notice("Open a note first to add a card into it.");
 			return;
 		}
-		const editor = view.editor;
 
 		new AddByLinkModal(this.plugin, (query: CardSearchQuery) => {
 			new CardSearchModal(
 				this.plugin,
-				(entry, addQty) => this.insertEntry(editor, entry, addQty),
+				(entry, addQty) => void this.insertEntry(file, entry, addQty),
 				query
 			).open();
 		}).open();
 	}
 
-	private insertEntry(
-		editor: Editor,
+	/**
+	 * Insert a card into `file`. Uses the live editor when the file is open in
+	 * an editing mode (preserves cursor + unsaved buffer); otherwise (e.g.
+	 * Reading view) writes the file on disk so it works in every mode.
+	 */
+	private async insertEntry(
+		file: TFile,
 		entry: CollectionEntry,
 		addQty: number
-	): void {
-		const md = this.plugin.markdown;
-		const content = editor.getValue();
+	): Promise<void> {
+		try {
+			const md = this.plugin.markdown;
+			const view =
+				this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
+			const editor =
+				view && view.file === file && view.getMode() === "source"
+					? view.editor
+					: null;
 
-		if (md.hasSection(content)) {
-			const entries = md.parseEntries(content);
-			const updated = this.maybeAutoSort(md.upsert(entries, entry, addQty));
-			const newContent = md.replaceSection(content, updated);
-			if (newContent) this.setEditorValue(editor, newContent);
-		} else {
-			// No section yet: insert a fresh one at the cursor.
-			const section = md.renderSection([{ ...entry, quantity: addQty }]);
-			editor.replaceSelection(`\n${section}\n`);
+			if (editor) {
+				const content = editor.getValue();
+				const next = this.withEntry(content, entry, addQty);
+				this.setEditorValue(editor, next);
+			} else {
+				const content = await this.plugin.app.vault.read(file);
+				const next = this.withEntry(content, entry, addQty);
+				await this.plugin.app.vault.modify(file, next);
+			}
+		} catch (err) {
+			console.error("[pokemon-collection] failed to insert card", err);
+			new Notice(
+				`Could not write card to note: ${
+					err instanceof Error ? err.message : String(err)
+				}`
+			);
 		}
+	}
+
+	/** Return `content` with the card upserted into its collection section. */
+	private withEntry(
+		content: string,
+		entry: CollectionEntry,
+		addQty: number
+	): string {
+		const md = this.plugin.markdown;
+		if (md.hasSection(content)) {
+			const updated = this.maybeAutoSort(
+				md.upsert(md.parseEntries(content), entry, addQty)
+			);
+			return md.replaceSection(content, updated) ?? content;
+		}
+		// No section yet: append a fresh one at the end of the note.
+		const section = md.renderSection([{ ...entry, quantity: addQty }]);
+		const sep = content.length === 0 ? "" : content.endsWith("\n") ? "\n" : "\n\n";
+		return `${content}${sep}${section}\n`;
 	}
 
 	/** Replace the whole document while keeping the cursor position stable. */
