@@ -1,4 +1,4 @@
-import { Plugin, WorkspaceLeaf } from "obsidian";
+import { Plugin } from "obsidian";
 import {
 	DEFAULT_SETTINGS,
 	PokemonCollectionSettings,
@@ -10,8 +10,10 @@ import { PriceService } from "./services/PriceService";
 import { CollectionService } from "./services/CollectionService";
 import { MarkdownParser } from "./parser/MarkdownParser";
 import { CommandController } from "./commands";
-import { DASHBOARD_VIEW_TYPE, DashboardView } from "./ui/DashboardView";
 import { DashboardBlock } from "./ui/DashboardBlock";
+
+/** Legacy sidebar view type — detached on load so old leaves don't error. */
+const LEGACY_DASHBOARD_VIEW_TYPE = "pokemon-collection-dashboard";
 
 export default class PokemonCollectionPlugin extends Plugin {
 	settings!: PokemonCollectionSettings;
@@ -40,19 +42,8 @@ export default class PokemonCollectionPlugin extends Plugin {
 		this.commands = new CommandController(this);
 		this.commands.register();
 
-		// Dashboard view.
-		this.registerView(
-			DASHBOARD_VIEW_TYPE,
-			(leaf) => new DashboardView(leaf, this)
-		);
-		this.addRibbonIcon("layout-dashboard", "Pokémon Collection Dashboard", () =>
-			this.activateDashboard()
-		);
-		this.addCommand({
-			id: "open-dashboard",
-			name: "Open Pokémon Collection Dashboard",
-			callback: () => this.activateDashboard(),
-		});
+		// Clean up any leftover sidebar dashboard leaf from older versions.
+		this.app.workspace.detachLeavesOfType(LEGACY_DASHBOARD_VIEW_TYPE);
 
 		// In-note dashboard: ```pokemon-dashboard code blocks.
 		this.registerMarkdownCodeBlockProcessor(
@@ -82,23 +73,6 @@ export default class PokemonCollectionPlugin extends Plugin {
 
 	async saveSettings(): Promise<void> {
 		await this.saveData(this.settings);
-	}
-
-	/** Open (or reveal) the dashboard in the right sidebar. */
-	async activateDashboard(): Promise<void> {
-		const { workspace } = this.app;
-		let leaf: WorkspaceLeaf | null = null;
-		const existing = workspace.getLeavesOfType(DASHBOARD_VIEW_TYPE);
-		if (existing.length > 0) {
-			leaf = existing[0];
-		} else {
-			leaf = workspace.getRightLeaf(false);
-			await leaf?.setViewState({
-				type: DASHBOARD_VIEW_TYPE,
-				active: true,
-			});
-		}
-		if (leaf) workspace.revealLeaf(leaf);
 	}
 
 	/** (Re)start the optional auto price-update interval based on settings. */
