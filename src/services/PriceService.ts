@@ -1,6 +1,5 @@
 import type PokemonCollectionPlugin from "../main";
 import type { CardKey, TcgdexCardFull } from "../types";
-import { cardmarketUrlForCard } from "../cardmarket";
 
 /**
  * A price provider abstracts *where* prices come from. v1 ships only the
@@ -52,6 +51,7 @@ export class PriceService {
 		const price = this.provider.priceFromCard(card);
 		const key: CardKey = `${id}:${variant}`;
 		const now = new Date().toISOString();
+		const cardmarketUrl = await this.plugin.api.cardmarketUrlForCard(card);
 
 		await this.plugin.cache.putMeta(key, {
 			id,
@@ -65,7 +65,7 @@ export class PriceService {
 			marketPrice: price,
 			currency: this.provider.currency,
 			cardmarketId: card.pricing?.cardmarket?.idProduct,
-			cardmarketUrl: cardmarketUrlForCard(card),
+			cardmarketUrl,
 			lastPriceUpdate: now,
 			dateAdded: this.plugin.cache.getMeta(key)?.dateAdded ?? now,
 		});

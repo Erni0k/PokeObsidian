@@ -189,3 +189,10 @@ export interface TcgdexSetBrief {
 	logo?: string;
 	cardCount?: { total?: number; official?: number };
 }
+
+/** Full set as returned by `/sets/{id}` (adds abbreviation + card list). */
+export interface TcgdexSetFull extends TcgdexSetBrief {
+	/** Cardmarket-style set abbreviation, e.g. { official: "DAA" }. */
+	abbreviation?: { official?: string; localId?: string };
+	cards?: TcgdexCardBrief[];
+}

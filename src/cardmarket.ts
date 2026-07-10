@@ -1,19 +1,18 @@
-import type { TcgdexCardFull } from "./types";
-
 /**
  * Cardmarket link helpers.
  *
  * Cardmarket single-card pages follow the pattern
- *   https://www.cardmarket.com/en/Pokemon/Products/Singles/{Expansion}/{Card-Name}
- * We build that canonical URL from the TCGdex set + card name (best-effort:
- * slugs mostly match, but ambiguous names may need Cardmarket's -V1/-V2
- * suffixes). When the set is unknown we fall back to a name search.
+ *   https://www.cardmarket.com/en/Pokemon/Products/Singles/{Expansion}/{Card-Name}-{ABBR}{Number}
+ * e.g. .../Singles/Darkness-Ablaze/Furret-DAA136. The set abbreviation lives
+ * only on the full /sets/{id} endpoint, so the fully-qualified URL is built
+ * asynchronously in ApiService; the sync helpers here handle slugging, the
+ * fallback (no code suffix), and parsing pasted links.
  */
 
 const CM_BASE = "https://www.cardmarket.com/en/Pokemon/Products";
 
 /** Slugify a name the way Cardmarket does for its URLs. */
-function slug(value: string): string {
+export function slug(value: string): string {
 	return value
 		.normalize("NFD")
 		.replace(/[̀-ͯ]/g, "") // strip accents
@@ -32,29 +31,36 @@ export function cardmarketSearchUrl(name: string): string {
 	return `${CM_BASE}/Search?searchString=${q}`;
 }
 
-/** Canonical Cardmarket single-card URL for a card, or a search fallback. */
-export function cardmarketUrlForCard(card: TcgdexCardFull): string {
-	const setName = card.set?.name;
-	if (!setName) return cardmarketSearchUrl(card.name);
-	return `${CM_BASE}/Singles/${slug(setName)}/${slug(card.name)}`;
+/**
+ * Build a canonical single-card URL. `code` is the Cardmarket suffix
+ * (`{ABBR}{Number}`, e.g. "DAA136"); omit it for the best-effort fallback.
+ */
+export function cardmarketSingleUrl(
+	setName: string,
+	name: string,
+	code?: string
+): string {
+	if (!setName) return cardmarketSearchUrl(name);
+	const suffix = code ? `-${code}` : "";
+	return `${CM_BASE}/Singles/${slug(setName)}/${slug(name)}${suffix}`;
 }
 
-/** Canonical URL from a stored set name + card name (used when rendering rows). */
+/** Sync fallback used when rendering rows without a cached URL. */
 export function cardmarketUrl(setName: string, name: string): string {
-	if (!setName) return cardmarketSearchUrl(name);
-	return `${CM_BASE}/Singles/${slug(setName)}/${slug(name)}`;
+	return cardmarketSingleUrl(setName, name);
 }
 
 /** Parsed hint extracted from a pasted Cardmarket URL. */
 export interface CardmarketLinkInfo {
 	name?: string;
 	set?: string;
+	number?: string;
 }
 
 /**
- * Extract a card name (and set) from a pasted Cardmarket URL. Handles both the
- * canonical Singles path and the search URL form. Returns null if nothing
- * useful can be parsed.
+ * Extract card name / set / number from a pasted Cardmarket URL. Handles the
+ * canonical Singles path (with or without the `{ABBR}{Number}` suffix) and the
+ * search URL form. Returns null if nothing useful can be parsed.
  */
 export function parseCardmarketUrl(url: string): CardmarketLinkInfo | null {
 	const trimmed = url.trim();
@@ -62,9 +68,18 @@ export function parseCardmarketUrl(url: string): CardmarketLinkInfo | null {
 	const single = trimmed.match(/\/Singles\/([^/?#]+)\/([^/?#]+)/i);
 	if (single) {
 		const set = deslug(single[1]);
-		// Drop Cardmarket's disambiguation suffix, e.g. "Furret-V1".
-		const name = deslug(single[2]).replace(/\s+V\d+$/i, "");
-		return { name, set };
+		const raw = single[2];
+		// Peel off a "{ABBR}{Number}" code suffix (e.g. Furret-DAA136).
+		const code = raw.match(/^(.+?)-([A-Za-z]{2,4})(\d{1,4})$/);
+		if (code) {
+			return {
+				set,
+				name: deslug(code[1]),
+				number: String(Number.parseInt(code[3], 10)),
+			};
+		}
+		// Otherwise drop a plain "-V1" disambiguation suffix if present.
+		return { set, name: deslug(raw).replace(/\s+V\d+$/i, "") };
 	}
 
 	const search = trimmed.match(/[?&]searchString=([^&#]+)/i);

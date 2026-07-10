@@ -7,7 +7,6 @@ import {
 	VARIANT_LABELS,
 } from "../types";
 import { CardmarketProvider } from "../services/PriceService";
-import { cardmarketUrlForCard } from "../cardmarket";
 import type { AddCardCallback } from "./CardSearchModal";
 
 const CUSTOM = "__custom__";
@@ -76,8 +75,10 @@ export class VariantSelectorModal extends Modal {
 			text: "View on Cardmarket ↗",
 			cls: "pokemon-collection-cm-link",
 		});
-		cmLink.href = cardmarketUrlForCard(this.card);
 		cmLink.setAttr("target", "_blank");
+		void this.plugin.api
+			.cardmarketUrlForCard(this.card)
+			.then((url) => (cmLink.href = url));
 
 		if (this.plugin.settings.enableImagePreviews && this.card.image) {
 			const img = contentEl.createEl("img", {
@@ -171,6 +172,7 @@ export class VariantSelectorModal extends Modal {
 		const id = this.card.id;
 		const key = this.plugin.markdown.keyOf(id, variant);
 		const now = new Date().toISOString();
+		const cardmarketUrl = await this.plugin.api.cardmarketUrlForCard(this.card);
 
 		// Persist metadata (image, rarity, price…) to the cache keyed by id:variant.
 		await this.plugin.cache.putMeta(key, {
@@ -185,7 +187,7 @@ export class VariantSelectorModal extends Modal {
 			marketPrice: this.price,
 			currency: "EUR",
 			cardmarketId: this.card.pricing?.cardmarket?.idProduct,
-			cardmarketUrl: cardmarketUrlForCard(this.card),
+			cardmarketUrl,
 			lastPriceUpdate: this.price !== undefined ? now : undefined,
 			dateAdded: this.plugin.cache.getMeta(key)?.dateAdded ?? now,
 		});

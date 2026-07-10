@@ -62,6 +62,6 @@ export class AddByLinkModal extends Modal {
 			return;
 		}
 		this.close();
-		this.onParsed({ name: info.name, set: info.set });
+		this.onParsed({ name: info.name, set: info.set, number: info.number });
 	}
 }

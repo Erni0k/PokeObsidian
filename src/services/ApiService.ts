@@ -4,7 +4,9 @@ import type {
 	TcgdexCardBrief,
 	TcgdexCardFull,
 	TcgdexSetBrief,
+	TcgdexSetFull,
 } from "../types";
+import { cardmarketSearchUrl, cardmarketSingleUrl } from "../cardmarket";
 
 const BASE_URL = "https://api.tcgdex.net/v2";
 
@@ -90,6 +92,39 @@ export class ApiService {
 	async getCard(id: string): Promise<TcgdexCardFull | null> {
 		const path = `/cards/${encodeURIComponent(id)}`;
 		return await this.get<TcgdexCardFull>(path);
+	}
+
+	/** Full set details (includes the Cardmarket abbreviation). */
+	async getSet(id: string): Promise<TcgdexSetFull | null> {
+		const path = `/sets/${encodeURIComponent(id)}`;
+		return await this.get<TcgdexSetFull>(path);
+	}
+
+	/**
+	 * Best Cardmarket single-card URL for a card. Fetches the set to obtain the
+	 * abbreviation and appends the `{ABBR}{Number}` suffix (e.g. Furret-DAA136).
+	 * Falls back to a name search / suffix-less URL when data is missing.
+	 */
+	async cardmarketUrlForCard(card: TcgdexCardFull): Promise<string> {
+		const setName = card.set?.name;
+		if (!setName) return cardmarketSearchUrl(card.name);
+
+		let code: string | undefined;
+		const setId = card.set?.id;
+		if (setId) {
+			const set = await this.getSet(setId);
+			const abbr = set?.abbreviation?.official;
+			const num = this.cardmarketNumber(card.localId);
+			if (abbr && num) code = `${abbr}${num}`;
+		}
+		return cardmarketSingleUrl(setName, card.name, code);
+	}
+
+	/** Format a card's local id the way Cardmarket does (zero-pad numeric to 3). */
+	private cardmarketNumber(localId?: string): string {
+		if (localId === undefined || localId === null) return "";
+		const s = String(localId);
+		return /^\d+$/.test(s) ? s.padStart(3, "0") : s.toUpperCase();
 	}
 
 	/** Search sets by name (for the set filter dropdown / autocomplete). */
