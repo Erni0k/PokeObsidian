@@ -18,6 +18,13 @@ Command **“Pokémon Collection: Add card”**:
 3. Set **language**, **quantity** and **price** (auto-filled from Cardmarket).
 4. The card is inserted into the active note. Adding a card that already exists **increments its quantity**.
 
+The search modal has a **Language** dropdown, so you can search any TCGdex
+language (e.g. `ja` for Japanese, `de`, `fr`, …), not just your default. For
+cards TCGdex doesn't have (promo bundles like *Trick or Trade*, some regional
+printings), use **“Add card manually”** (a button in the search modal, or the
+command) to enter the details by hand — no image/auto-price, but the card is
+still tracked, priced manually and counted in the dashboard.
+
 ### Collection table
 The table is written between `<!-- pokemon-collection:start -->` and `<!-- pokemon-collection:end -->` markers, so the plugin only ever touches that region:
 

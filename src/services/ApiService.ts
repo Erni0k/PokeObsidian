@@ -55,7 +55,10 @@ export class ApiService {
 	 * Returns up to a reasonable number of briefs, filtered client-side for
 	 * fields the list endpoint cannot filter on.
 	 */
-	async searchCards(query: CardSearchQuery): Promise<TcgdexCardBrief[]> {
+	async searchCards(
+		query: CardSearchQuery,
+		lang?: string
+	): Promise<TcgdexCardBrief[]> {
 		const name = query.name?.trim();
 		const number = query.number?.trim();
 		const set = query.set?.trim();
@@ -64,14 +67,14 @@ export class ApiService {
 
 		if (set) {
 			// Resolve the set, then list its cards and filter locally.
-			briefs = await this.cardsInSet(set);
+			briefs = await this.cardsInSet(set, lang);
 			if (name) {
 				const lc = name.toLowerCase();
 				briefs = briefs.filter((c) => c.name?.toLowerCase().includes(lc));
 			}
 		} else if (name) {
 			const path = `/cards?name=${encodeURIComponent(name)}`;
-			briefs = (await this.get<TcgdexCardBrief[]>(path)) ?? [];
+			briefs = (await this.get<TcgdexCardBrief[]>(path, lang)) ?? [];
 		} else if (number) {
 			// Number-only search: too broad to fetch all cards; require a name/set.
 			return [];
@@ -89,15 +92,15 @@ export class ApiService {
 	}
 
 	/** Full card details for a single id. */
-	async getCard(id: string): Promise<TcgdexCardFull | null> {
+	async getCard(id: string, lang?: string): Promise<TcgdexCardFull | null> {
 		const path = `/cards/${encodeURIComponent(id)}`;
-		return await this.get<TcgdexCardFull>(path);
+		return await this.get<TcgdexCardFull>(path, lang);
 	}
 
 	/** Full set details (includes the Cardmarket abbreviation). */
-	async getSet(id: string): Promise<TcgdexSetFull | null> {
+	async getSet(id: string, lang?: string): Promise<TcgdexSetFull | null> {
 		const path = `/sets/${encodeURIComponent(id)}`;
-		return await this.get<TcgdexSetFull>(path);
+		return await this.get<TcgdexSetFull>(path, lang);
 	}
 
 	/** The set id embedded in a card id ("sv10-021" → "sv10"). */
@@ -107,8 +110,11 @@ export class ApiService {
 	}
 
 	/** The set's short code (abbreviation.official, e.g. "DRI"), if known. */
-	async setAbbreviation(setId: string): Promise<string | undefined> {
-		const set = await this.getSet(setId);
+	async setAbbreviation(
+		setId: string,
+		lang?: string
+	): Promise<string | undefined> {
+		const set = await this.getSet(setId, lang);
 		return set?.abbreviation?.official;
 	}
 
@@ -117,14 +123,17 @@ export class ApiService {
 	 * abbreviation and appends the `{ABBR}{Number}` suffix (e.g. Furret-DAA136).
 	 * Falls back to a name search / suffix-less URL when data is missing.
 	 */
-	async cardmarketUrlForCard(card: TcgdexCardFull): Promise<string> {
+	async cardmarketUrlForCard(
+		card: TcgdexCardFull,
+		lang?: string
+	): Promise<string> {
 		const setName = card.set?.name;
 		if (!setName) return cardmarketSearchUrl(card.name);
 
 		let code: string | undefined;
 		const setId = card.set?.id;
 		if (setId) {
-			const set = await this.getSet(setId);
+			const set = await this.getSet(setId, lang);
 			const abbr = set?.abbreviation?.official;
 			const num = this.cardmarketNumber(card.localId);
 			if (abbr && num) code = `${abbr}${num}`;
@@ -140,24 +149,29 @@ export class ApiService {
 	}
 
 	/** Search sets by name (for the set filter dropdown / autocomplete). */
-	async searchSets(name: string): Promise<TcgdexSetBrief[]> {
-		const all = (await this.get<TcgdexSetBrief[]>("/sets")) ?? [];
+	async searchSets(name: string, lang?: string): Promise<TcgdexSetBrief[]> {
+		const all = (await this.get<TcgdexSetBrief[]>("/sets", lang)) ?? [];
 		const lc = name.trim().toLowerCase();
 		if (!lc) return all;
 		return all.filter((s) => s.name?.toLowerCase().includes(lc));
 	}
 
-	private async cardsInSet(setQuery: string): Promise<TcgdexCardBrief[]> {
+	private async cardsInSet(
+		setQuery: string,
+		lang?: string
+	): Promise<TcgdexCardBrief[]> {
 		// Try direct set id first, then fall back to a name search.
 		const direct = await this.get<{ cards?: TcgdexCardBrief[] }>(
-			`/sets/${encodeURIComponent(setQuery)}`
+			`/sets/${encodeURIComponent(setQuery)}`,
+			lang
 		);
 		if (direct?.cards?.length) return direct.cards;
 
-		const matches = await this.searchSets(setQuery);
+		const matches = await this.searchSets(setQuery, lang);
 		if (!matches.length) return [];
 		const full = await this.get<{ cards?: TcgdexCardBrief[] }>(
-			`/sets/${encodeURIComponent(matches[0].id)}`
+			`/sets/${encodeURIComponent(matches[0].id)}`,
+			lang
 		);
 		return full?.cards ?? [];
 	}
@@ -166,12 +180,13 @@ export class ApiService {
 	 * Cached GET. Returns fresh cache when available, otherwise fetches; on
 	 * network error falls back to stale cache (offline support).
 	 */
-	private async get<T>(path: string): Promise<T | null> {
-		const cacheKey = `${this.lang}${path}`;
+	private async get<T>(path: string, lang?: string): Promise<T | null> {
+		const l = lang || this.lang;
+		const cacheKey = `${l}${path}`;
 		const fresh = this.plugin.cache.getFresh<T>(cacheKey);
 		if (fresh !== undefined) return fresh;
 
-		const url = `${BASE_URL}/${this.lang}${path}`;
+		const url = `${BASE_URL}/${l}${path}`;
 		try {
 			const res: RequestUrlResponse = await requestUrl({
 				url,

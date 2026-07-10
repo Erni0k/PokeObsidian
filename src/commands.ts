@@ -4,6 +4,7 @@ import type { CardKey, CollectionEntry } from "./types";
 import { CardSearchModal } from "./ui/CardSearchModal";
 import { SortModal } from "./ui/SortModal";
 import { AddByLinkModal } from "./ui/AddByLinkModal";
+import { ManualAddModal } from "./ui/ManualAddModal";
 import type { CardSearchQuery } from "./services/ApiService";
 
 /** Registers all plugin commands and holds their implementations. */
@@ -27,6 +28,12 @@ export class CommandController {
 			id: "add-card-from-link",
 			name: "Add card from Cardmarket link",
 			callback: () => this.addCardFromLink(),
+		});
+
+		plugin.addCommand({
+			id: "add-card-manually",
+			name: "Add card manually",
+			callback: () => this.addCardManually(),
 		});
 
 		plugin.addCommand({
@@ -130,6 +137,17 @@ export class CommandController {
 		new CardSearchModal(this.plugin, (entry, addQty) => {
 			void this.insertEntry(file, entry, addQty);
 		}).open();
+	}
+
+	private addCardManually(): void {
+		const file = this.plugin.app.workspace.getActiveFile();
+		if (!file || file.extension !== "md") {
+			new Notice("Open a note first to add a card into it.");
+			return;
+		}
+		new ManualAddModal(this.plugin, (entry, addQty) =>
+			void this.insertEntry(file, entry, addQty)
+		).open();
 	}
 
 	private addCardFromLink(): void {

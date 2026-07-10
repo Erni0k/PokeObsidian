@@ -23,6 +23,7 @@ export class VariantSelectorModal extends Modal {
 	private selectedVariant: string;
 	private customVariant = "";
 	private language: string;
+	private lang: string;
 	private quantity: number;
 	private price: number | undefined;
 
@@ -31,16 +32,18 @@ export class VariantSelectorModal extends Modal {
 	constructor(
 		plugin: PokemonCollectionPlugin,
 		card: TcgdexCardFull,
-		onConfirm: AddCardCallback
+		onConfirm: AddCardCallback,
+		lang?: string
 	) {
 		super(plugin.app);
 		this.plugin = plugin;
 		this.card = card;
 		this.onConfirm = onConfirm;
+		this.lang = lang || plugin.settings.preferredLanguage || "en";
 
 		const available = this.availableVariants();
 		this.selectedVariant = available[0] ?? "normal";
-		this.language = (plugin.settings.preferredLanguage || "en").toUpperCase();
+		this.language = this.lang.toUpperCase();
 		this.quantity = plugin.settings.defaultQuantity;
 		this.price = new CardmarketProvider().priceFromCard(card);
 	}
@@ -90,7 +93,7 @@ export class VariantSelectorModal extends Modal {
 		});
 		cmLink.setAttr("target", "_blank");
 		void this.plugin.api
-			.cardmarketUrlForCard(this.card)
+			.cardmarketUrlForCard(this.card, this.lang)
 			.then((url) => (cmLink.href = url));
 
 		if (this.plugin.settings.enableImagePreviews && this.card.image) {
@@ -198,7 +201,10 @@ export class VariantSelectorModal extends Modal {
 		const id = this.card.id;
 		const key = this.plugin.markdown.keyOf(id, variant);
 		const now = new Date().toISOString();
-		const cardmarketUrl = await this.plugin.api.cardmarketUrlForCard(this.card);
+		const cardmarketUrl = await this.plugin.api.cardmarketUrlForCard(
+			this.card,
+			this.lang
+		);
 
 		// Persist metadata (image, rarity, price…) to the cache keyed by id:variant.
 		await this.plugin.cache.putMeta(key, {

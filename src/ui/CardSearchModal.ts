@@ -2,7 +2,9 @@ import { Modal, Notice, Setting } from "obsidian";
 import type PokemonCollectionPlugin from "../main";
 import type { CollectionEntry, TcgdexCardBrief } from "../types";
 import type { CardSearchQuery } from "../services/ApiService";
+import { SUPPORTED_LANGUAGES } from "../settings";
 import { VariantSelectorModal } from "./VariantSelectorModal";
+import { ManualAddModal } from "./ManualAddModal";
 
 export type AddCardCallback = (entry: CollectionEntry, addQty: number) => void;
 
@@ -18,6 +20,7 @@ export class CardSearchModal extends Modal {
 	private nameValue = "";
 	private numberValue = "";
 	private setValue = "";
+	private lang: string;
 	private resultsEl!: HTMLElement;
 	private searchTimer: number | null = null;
 	/** Dedupes set-abbreviation lookups across result rows. */
@@ -34,6 +37,7 @@ export class CardSearchModal extends Modal {
 		this.nameValue = initial?.name ?? "";
 		this.numberValue = initial?.number ?? "";
 		this.setValue = initial?.set ?? "";
+		this.lang = plugin.settings.preferredLanguage || "en";
 	}
 
 	onOpen(): void {
@@ -72,12 +76,30 @@ export class CardSearchModal extends Modal {
 				});
 		});
 
-		new Setting(contentEl).addButton((b) =>
-			b
-				.setButtonText("Search")
-				.setCta()
-				.onClick(() => this.runSearch())
-		);
+		new Setting(contentEl)
+			.setName("Language")
+			.setDesc("Which TCGdex language to search (e.g. ja for Japanese).")
+			.addDropdown((dd) => {
+				for (const l of SUPPORTED_LANGUAGES) dd.addOption(l, l.toUpperCase());
+				dd.setValue(this.lang).onChange((v) => {
+					this.lang = v;
+					this.abbrCache.clear();
+					this.scheduleSearch();
+				});
+			});
+
+		new Setting(contentEl)
+			.addButton((b) =>
+				b
+					.setButtonText("Search")
+					.setCta()
+					.onClick(() => this.runSearch())
+			)
+			.addButton((b) =>
+				b
+					.setButtonText("Add manually")
+					.onClick(() => this.addManually())
+			);
 
 		this.resultsEl = contentEl.createDiv({ cls: "pokemon-collection-results" });
 		this.resultsEl.createEl("p", {
@@ -116,11 +138,10 @@ export class CardSearchModal extends Modal {
 		});
 
 		try {
-			const results = await this.plugin.api.searchCards({
-				name,
-				number,
-				set,
-			});
+			const results = await this.plugin.api.searchCards(
+				{ name, number, set },
+				this.lang
+			);
 			this.renderResults(results);
 		} catch (err) {
 			console.error("[pokemon-collection] search failed", err);
@@ -136,7 +157,7 @@ export class CardSearchModal extends Modal {
 	private abbr(setId: string): Promise<string | undefined> {
 		let p = this.abbrCache.get(setId);
 		if (!p) {
-			p = this.plugin.api.setAbbreviation(setId);
+			p = this.plugin.api.setAbbreviation(setId, this.lang);
 			this.abbrCache.set(setId, p);
 		}
 		return p;
@@ -187,19 +208,40 @@ export class CardSearchModal extends Modal {
 		}
 	}
 
+	private addManually(): void {
+		new ManualAddModal(
+			this.plugin,
+			(entry, addQty) => {
+				this.close();
+				this.onConfirm(entry, addQty);
+			},
+			{
+				name: this.nameValue,
+				number: this.numberValue,
+				setName: this.setValue,
+				language: this.lang.toUpperCase(),
+			}
+		).open();
+	}
+
 	private async pickCard(brief: TcgdexCardBrief): Promise<void> {
 		const notice = new Notice("Loading card details…", 0);
 		try {
-			const full = await this.plugin.api.getCard(brief.id);
+			const full = await this.plugin.api.getCard(brief.id, this.lang);
 			notice.hide();
 			if (!full) {
 				new Notice("Could not load card details.");
 				return;
 			}
-			new VariantSelectorModal(this.plugin, full, (entry, addQty) => {
-				this.close();
-				this.onConfirm(entry, addQty);
-			}).open();
+			new VariantSelectorModal(
+				this.plugin,
+				full,
+				(entry, addQty) => {
+					this.close();
+					this.onConfirm(entry, addQty);
+				},
+				this.lang
+			).open();
 		} catch (err) {
 			notice.hide();
 			console.error("[pokemon-collection] failed to load card", err);
