@@ -11,6 +11,7 @@ import { CollectionService } from "./services/CollectionService";
 import { MarkdownParser } from "./parser/MarkdownParser";
 import { CommandController } from "./commands";
 import { DASHBOARD_VIEW_TYPE, DashboardView } from "./ui/DashboardView";
+import { DashboardBlock } from "./ui/DashboardBlock";
 
 export default class PokemonCollectionPlugin extends Plugin {
 	settings!: PokemonCollectionSettings;
@@ -52,6 +53,16 @@ export default class PokemonCollectionPlugin extends Plugin {
 			name: "Open Pokémon Collection Dashboard",
 			callback: () => this.activateDashboard(),
 		});
+
+		// In-note dashboard: ```pokemon-dashboard code blocks.
+		this.registerMarkdownCodeBlockProcessor(
+			"pokemon-dashboard",
+			async (_source, el, ctx) => {
+				const child = new DashboardBlock(this, el);
+				ctx.addChild(child);
+				await child.render();
+			}
+		);
 
 		this.addSettingTab(new PokemonCollectionSettingTab(this.app, this));
 

@@ -75,6 +75,10 @@ export interface CachedCardMeta {
 	marketPrice?: number;
 	/** Currency of {@link marketPrice}. */
 	currency?: string;
+	/** Cardmarket product id (from TCGdex pricing), if known. */
+	cardmarketId?: number;
+	/** Link to the card on Cardmarket. */
+	cardmarketUrl?: string;
 	/** ISO timestamp of the last price refresh. */
 	lastPriceUpdate?: string;
 	/** ISO timestamp when first cached. */
@@ -167,6 +171,8 @@ export interface TcgdexPricing {
 
 export interface TcgdexMarketPricing {
 	unit?: string;
+	/** Cardmarket product id. */
+	idProduct?: number;
 	trend?: number;
 	avg?: number;
 	avg1?: number;

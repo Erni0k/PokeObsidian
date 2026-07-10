@@ -1,5 +1,6 @@
 import type PokemonCollectionPlugin from "../main";
 import type { CardKey, CollectionEntry, Variant } from "../types";
+import { cardmarketSearchUrl } from "../cardmarket";
 
 export const START_MARKER = "<!-- pokemon-collection:start -->";
 export const END_MARKER = "<!-- pokemon-collection:end -->";
@@ -112,8 +113,10 @@ export class MarkdownParser {
 		if (/^-{2,}$/.test(cells[0]?.replace(/\s/g, "") ?? "")) return null;
 		if (cells.length < TABLE_COLUMNS.length) return null;
 
-		const [name, setName, number, variant, language, qtyStr, priceStr, idCell] =
+		const [nameCell, setName, number, variant, language, qtyStr, priceStr, idCell] =
 			cells;
+
+		const name = this.stripLink(nameCell ?? "");
 
 		let id = idCell?.trim() ?? "";
 		let variantResolved = variant?.trim() || "normal";
@@ -133,7 +136,7 @@ export class MarkdownParser {
 
 		return {
 			id,
-			name: name?.trim() ?? "",
+			name: name.trim(),
 			setName: setName?.trim() ?? "",
 			number: number?.trim() ?? "",
 			variant: variantResolved,
@@ -159,9 +162,25 @@ export class MarkdownParser {
 		return value.replace(/\|/g, "\\|");
 	}
 
+	/** Extract the display text from a `[text](url)` link, else return as-is. */
+	private stripLink(value: string): string {
+		const m = value.trim().match(/^\[(.+?)\]\((?:.*?)\)$/);
+		return m ? m[1] : value.trim();
+	}
+
+	/** Render the card name as a Markdown link to Cardmarket. */
+	private nameCell(e: CollectionEntry): string {
+		const name = this.escape(e.name);
+		if (!e.name) return name;
+		const url =
+			this.plugin.cache.getMeta(e.key)?.cardmarketUrl ??
+			cardmarketSearchUrl(e.name);
+		return `[${name}](${url})`;
+	}
+
 	private renderRow(e: CollectionEntry): string {
 		const cells = [
-			this.escape(e.name),
+			this.nameCell(e),
 			this.escape(e.setName),
 			this.escape(e.number),
 			this.escape(String(e.variant)),

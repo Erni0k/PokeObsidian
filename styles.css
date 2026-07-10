@@ -112,3 +112,14 @@
 	position: relative;
 	height: 240px;
 }
+
+/* In-note dashboard code block */
+.pokemon-collection-dashboard-block {
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	padding: 0.75rem 1rem;
+}
+
+.pokemon-collection-cm-link {
+	font-size: var(--font-ui-smaller);
+}

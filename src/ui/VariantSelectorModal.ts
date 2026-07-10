@@ -7,6 +7,7 @@ import {
 	VARIANT_LABELS,
 } from "../types";
 import { CardmarketProvider } from "../services/PriceService";
+import { cardmarketUrlForCard } from "../cardmarket";
 import type { AddCardCallback } from "./CardSearchModal";
 
 const CUSTOM = "__custom__";
@@ -70,6 +71,13 @@ export class VariantSelectorModal extends Modal {
 				this.card.rarity ?? "—"
 			}`,
 		});
+		meta.createEl("br");
+		const cmLink = meta.createEl("a", {
+			text: "View on Cardmarket ↗",
+			cls: "pokemon-collection-cm-link",
+		});
+		cmLink.href = cardmarketUrlForCard(this.card);
+		cmLink.setAttr("target", "_blank");
 
 		if (this.plugin.settings.enableImagePreviews && this.card.image) {
 			const img = contentEl.createEl("img", {
@@ -176,6 +184,8 @@ export class VariantSelectorModal extends Modal {
 			cardUrl: this.plugin.api.cardPageUrl(id),
 			marketPrice: this.price,
 			currency: "EUR",
+			cardmarketId: this.card.pricing?.cardmarket?.idProduct,
+			cardmarketUrl: cardmarketUrlForCard(this.card),
 			lastPriceUpdate: this.price !== undefined ? now : undefined,
 			dateAdded: this.plugin.cache.getMeta(key)?.dateAdded ?? now,
 		});

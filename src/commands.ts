@@ -37,6 +37,39 @@ export class CommandController {
 			name: "Update all collection prices",
 			callback: () => this.updateAllPrices(),
 		});
+
+		plugin.addCommand({
+			id: "create-dashboard-note",
+			name: "Create dashboard note",
+			callback: () => this.createDashboardNote(),
+		});
+	}
+
+	// --- Dashboard note -----------------------------------------------------
+
+	/** Create (or open) a note containing a live `pokemon-dashboard` block. */
+	private async createDashboardNote(): Promise<void> {
+		const vault = this.plugin.app.vault;
+		const folder = this.plugin.settings.collectionFolder.trim();
+		const path = `${folder ? `${folder}/` : ""}Pokémon Dashboard.md`;
+
+		let file = vault.getAbstractFileByPath(path);
+		if (!(file instanceof TFile)) {
+			if (folder && !vault.getAbstractFileByPath(folder)) {
+				try {
+					await vault.createFolder(folder);
+				} catch {
+					/* folder may already exist */
+				}
+			}
+			const content =
+				"# Pokémon Collection Dashboard\n\n```pokemon-dashboard\n```\n";
+			file = await vault.create(path, content);
+		}
+
+		if (file instanceof TFile) {
+			await this.plugin.app.workspace.getLeaf(true).openFile(file);
+		}
 	}
 
 	// --- Add card -----------------------------------------------------------

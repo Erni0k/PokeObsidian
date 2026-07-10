@@ -1,5 +1,6 @@
 import type PokemonCollectionPlugin from "../main";
 import type { CardKey, TcgdexCardFull } from "../types";
+import { cardmarketUrlForCard } from "../cardmarket";
 
 /**
  * A price provider abstracts *where* prices come from. v1 ships only the
@@ -63,6 +64,8 @@ export class PriceService {
 			cardUrl: this.plugin.api.cardPageUrl(id),
 			marketPrice: price,
 			currency: this.provider.currency,
+			cardmarketId: card.pricing?.cardmarket?.idProduct,
+			cardmarketUrl: cardmarketUrlForCard(card),
 			lastPriceUpdate: now,
 			dateAdded: this.plugin.cache.getMeta(key)?.dateAdded ?? now,
 		});
