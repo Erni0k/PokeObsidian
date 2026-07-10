@@ -220,21 +220,26 @@ export class CommandController {
 	private async updateSelectedCard(editor: Editor): Promise<void> {
 		const md = this.plugin.markdown;
 		const line = editor.getLine(editor.getCursor().line);
-		const row = md.parseRow(line);
-		if (!row) {
+		const key = md.keyFromRow(line);
+		if (!key) {
 			new Notice("Place the cursor on a card row in the collection table.");
+			return;
+		}
+		const content = editor.getValue();
+		const row = md.parseEntries(content).find((e) => e.key === key);
+		if (!row) {
+			new Notice("Could not identify the card on this row.");
 			return;
 		}
 
 		const notice = new Notice(`Updating ${row.name}…`, 0);
-		const price = await this.refreshKey(row.key);
+		const price = await this.refreshKey(key);
 		notice.hide();
 
-		const content = editor.getValue();
 		const entries = this.maybeAutoSort(
 			md
 				.parseEntries(content)
-				.map((e) => (e.key === row.key ? { ...e, price } : e))
+				.map((e) => (e.key === key ? { ...e, price } : e))
 		);
 		const newContent = md.replaceSection(content, entries);
 		if (newContent) this.setEditorValue(editor, newContent);

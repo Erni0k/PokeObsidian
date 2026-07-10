@@ -51,9 +51,9 @@ function enhanceTable(
 	// Only act on our collection table (needs these identifying columns).
 	const isCollection =
 		labels.includes("card") &&
+		labels.includes("variant") &&
 		labels.includes("qty") &&
-		labels.includes("price") &&
-		labels.includes("id");
+		labels.includes("price");
 	if (!isCollection) return;
 
 	const current = sortState.get(sourcePath);

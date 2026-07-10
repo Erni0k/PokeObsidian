@@ -29,9 +29,11 @@ export const START_MARKER = "<!-- pokemon-collection:start -->";
 export const END_MARKER = "<!-- pokemon-collection:end -->";
 
 /**
- * The stable, always-present columns (identity + user-editable fields). An
- * optional leading "Image" column may be added based on settings; parsing is
- * offset-tolerant so tables with or without it both round-trip.
+ * The visible, user-facing columns. The card's stable identity (`id:variant`)
+ * is NOT a column — it is carried in an invisible HTML comment inside the Card
+ * cell (`<!--k:id:variant-->`). An optional leading "Image" column may be added
+ * based on settings. Parsing is header-driven, so tables with or without the
+ * Image column (and legacy tables that still have an ID column) all round-trip.
  */
 export const BASE_COLUMNS = [
 	"Card",
@@ -41,12 +43,37 @@ export const BASE_COLUMNS = [
 	"Lang",
 	"Qty",
 	"Price",
-	"ID",
 ] as const;
 
-const BASE_COL_COUNT = BASE_COLUMNS.length;
 /** Max width (px) for in-table thumbnails, so rows stay compact. */
 const MAX_TABLE_IMG_WIDTH = 80;
+
+/** Maps a (lowercased) header label to the entry field it feeds. */
+type ColField =
+	| "name"
+	| "setName"
+	| "number"
+	| "variant"
+	| "language"
+	| "quantity"
+	| "price"
+	| "id"
+	| "image";
+
+const HEADER_FIELD: Record<string, ColField> = {
+	image: "image",
+	card: "name",
+	set: "setName",
+	number: "number",
+	variant: "variant",
+	lang: "language",
+	qty: "quantity",
+	price: "price",
+	id: "id",
+};
+
+/** Matches the hidden identity comment inside a Card cell. */
+const KEY_COMMENT = /<!--\s*k:(.+?)\s*-->/;
 
 /** Region of a note occupied by a collection section (character offsets). */
 export interface SectionRegion {
@@ -120,70 +147,130 @@ export class MarkdownParser {
 	}
 
 	private parseRows(block: string): CollectionEntry[] {
+		const lines = block
+			.split(/\r?\n/)
+			.map((l) => l.trim())
+			.filter((l) => l.startsWith("|"));
+		if (!lines.length) return [];
+
+		// Locate the header row and build a column-index -> field map from it.
+		let colMap: (ColField | null)[] | null = null;
+		let headerSeen = false;
 		const entries: CollectionEntry[] = [];
-		for (const line of block.split(/\r?\n/)) {
-			const entry = this.parseRow(line);
+
+		for (const line of lines) {
+			const cells = this.splitRow(line);
+			const lower = cells.map((c) => c.toLowerCase());
+
+			if (!colMap) {
+				if (lower.includes("card")) {
+					colMap = lower.map((l) => HEADER_FIELD[l] ?? null);
+					headerSeen = true;
+				}
+				continue;
+			}
+			// Skip the separator row that follows the header.
+			if (cells.every((c) => /^:?-{2,}:?$/.test(c.replace(/\s/g, "")))) {
+				continue;
+			}
+			const entry = this.rowToEntry(cells, colMap);
 			if (entry) entries.push(entry);
 		}
-		return entries;
+
+		return headerSeen ? entries : [];
 	}
 
-	/**
-	 * Parse a single Markdown table line into an entry, or null if the line is
-	 * not a data row (blank, header, separator, or malformed). Public so the
-	 * "update selected card" command can identify the row under the cursor.
-	 */
-	parseRow(line: string): CollectionEntry | null {
-		const trimmed = line.trim();
-		if (!trimmed.startsWith("|")) return null;
-		const cells = this.splitRow(trimmed);
-		if (cells.length < BASE_COL_COUNT) return null;
-		// Tolerate an optional leading "Image" column (or other extras): the
-		// stable columns are always the last BASE_COL_COUNT cells.
-		const off = cells.length - BASE_COL_COUNT;
+	/** Build an entry from split cells using the header-derived column map. */
+	private rowToEntry(
+		cells: string[],
+		colMap: (ColField | null)[]
+	): CollectionEntry | null {
+		const get = (field: ColField): string => {
+			const idx = colMap.indexOf(field);
+			return idx >= 0 ? (cells[idx] ?? "") : "";
+		};
 
-		// Skip header + separator rows.
-		if (cells[off]?.toLowerCase() === "card") return null;
-		if (/^-{2,}$/.test(cells[off]?.replace(/\s/g, "") ?? "")) return null;
+		const rawName = get("name");
+		const name = this.stripLink(rawName);
 
-		const nameCell = cells[off];
-		const setName = cells[off + 1];
-		const number = cells[off + 2];
-		const variant = cells[off + 3];
-		const language = cells[off + 4];
-		const qtyStr = cells[off + 5];
-		const priceStr = cells[off + 6];
-		const idCell = cells[off + 7];
+		// Identity: hidden key comment in the Card cell, else a legacy ID column,
+		// else fall back to the cache by natural key, else a natural key.
+		const variantCol = get("variant").trim() || "normal";
+		let id = "";
+		let variant = variantCol;
 
-		const name = this.stripLink(nameCell ?? "");
-
-		let id = idCell?.trim() ?? "";
-		let variantResolved = variant?.trim() || "normal";
-		// The ID column is authoritative for identity when present.
-		if (id.includes(":")) {
-			const parsed = this.splitKey(id);
+		const commentKey = rawName.match(KEY_COMMENT)?.[1]?.trim();
+		const legacyId = get("id").trim();
+		const rawKey = commentKey || (legacyId.includes(":") ? legacyId : "");
+		if (rawKey) {
+			const parsed = this.splitKey(rawKey);
 			id = parsed.id;
-			variantResolved = parsed.variant;
+			variant = parsed.variant;
+		} else {
+			id = this.resolveIdByNaturalKey(name, get("setName").trim(), variant);
 		}
-		if (!id) return null;
-		const key = this.keyOf(id, variantResolved);
+
+		if (!name && !id) return null;
+		const key = id
+			? this.keyOf(id, variant)
+			: this.naturalKey(name, get("setName").trim(), variant);
 
 		const quantity = Math.max(
 			0,
-			Number.parseInt(qtyStr?.replace(/[^0-9]/g, "") || "0", 10) || 0
+			Number.parseInt(get("quantity").replace(/[^0-9]/g, "") || "0", 10) || 0
 		);
 
 		return {
 			id,
 			name: name.trim(),
-			setName: setName?.trim() ?? "",
-			number: number?.trim() ?? "",
-			variant: variantResolved,
-			language: language?.trim() || this.defaultLang(),
+			setName: get("setName").trim(),
+			number: get("number").trim(),
+			variant,
+			language: get("language").trim() || this.defaultLang(),
 			quantity,
-			price: this.parsePrice(priceStr ?? ""),
+			price: this.parsePrice(get("price")),
 			key,
 		};
+	}
+
+	/**
+	 * Extract the identity key from a single table line (used by "update
+	 * selected card" for the row under the cursor). Returns null if none.
+	 */
+	keyFromRow(line: string): string | null {
+		const trimmed = line.trim();
+		if (!trimmed.startsWith("|")) return null;
+		const comment = trimmed.match(KEY_COMMENT);
+		if (comment) return comment[1].trim();
+		// Legacy: an id:variant cell.
+		const cell = this.splitRow(trimmed).find((c) =>
+			/^[A-Za-z0-9-]+:.+$/.test(c)
+		);
+		return cell ?? null;
+	}
+
+	/** Look up a card id in the meta cache by its visible natural fields. */
+	private resolveIdByNaturalKey(
+		name: string,
+		setName: string,
+		variant: string
+	): string {
+		const nName = name.trim().toLowerCase();
+		const nSet = setName.trim().toLowerCase();
+		for (const meta of Object.values(this.plugin.cache.getAllMeta())) {
+			if (
+				meta.name?.toLowerCase() === nName &&
+				meta.setName?.toLowerCase() === nSet
+			) {
+				return meta.id;
+			}
+		}
+		return "";
+	}
+
+	/** A stable key for rows whose TCGdex id could not be recovered. */
+	private naturalKey(name: string, setName: string, variant: string): string {
+		return `${setName}|${name}:${variant}`;
 	}
 
 	/** Split a Markdown table row into trimmed cell values (handles `\|`). */
@@ -201,20 +288,24 @@ export class MarkdownParser {
 		return value.replace(/\|/g, "\\|");
 	}
 
-	/** Extract the display text from a `[text](url)` link, else return as-is. */
+	/** Extract the display text from a Card cell (strips the key comment + link). */
 	private stripLink(value: string): string {
-		const m = value.trim().match(/^\[(.+?)\]\((?:.*?)\)$/);
-		return m ? m[1] : value.trim();
+		const noComment = value.replace(KEY_COMMENT, "").trim();
+		const m = noComment.match(/^\[(.+?)\]\((?:.*?)\)$/);
+		return m ? m[1] : noComment;
 	}
 
-	/** Render the card name as a Markdown link to Cardmarket. */
+	/**
+	 * Render the Card cell: a Cardmarket link plus a hidden identity comment
+	 * (`<!--k:id:variant-->`) that replaces the old visible ID column.
+	 */
 	private nameCell(e: CollectionEntry): string {
 		const name = this.escape(e.name);
-		if (!e.name) return name;
 		const url =
 			this.plugin.cache.getMeta(e.key)?.cardmarketUrl ??
 			cardmarketUrl(e.setName, e.name);
-		return `[${name}](${url})`;
+		const link = e.name ? `[${name}](${url})` : name;
+		return `${link}<!--k:${e.key}-->`;
 	}
 
 	/** Whether the optional leading Image column is enabled. */
@@ -253,7 +344,6 @@ export class MarkdownParser {
 			this.escape(e.language),
 			String(e.quantity),
 			this.formatPrice(e.price),
-			this.escape(e.key),
 		];
 		const cells = this.imageColumnEnabled()
 			? [this.imageCell(e), ...baseCells]

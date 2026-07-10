@@ -23,13 +23,17 @@ The table is written between `<!-- pokemon-collection:start -->` and `<!-- pokem
 
 ```markdown
 <!-- pokemon-collection:start -->
-| Card | Set | Number | Variant | Lang | Qty | Price | ID |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| Pikachu | Base Set | 58 | reverse | EN | 2 | €25.41 | base1-58:reverse |
+| Card | Set | Number | Variant | Lang | Qty | Price |
+| --- | --- | --- | --- | --- | --- | --- |
+| [Pikachu](https://www.cardmarket.com/…)<!--k:base1-58:reverse--> | Base Set | 58 | reverse | EN | 2 | €25.41 |
 <!-- pokemon-collection:end -->
 ```
 
-The **ID** column (`tcgdexId:variant`) is the stable key that joins each row to the cache. If you delete it, the plugin falls back to matching by set + number + variant.
+The card's stable identity (`tcgdexId:variant`) is stored in a hidden HTML
+comment inside the Card cell — invisible in Reading view, so there is no
+technical ID column cluttering the table. If the comment is removed (manual
+edit), the plugin recovers the id from the cache by matching name + set, or
+falls back to a natural key.
 
 ### Price updates
 - **Update selected card price** — the row under the cursor.
