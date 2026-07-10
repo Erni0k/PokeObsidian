@@ -2,6 +2,29 @@ import type PokemonCollectionPlugin from "../main";
 import type { CardKey, CollectionEntry, Variant } from "../types";
 import { cardmarketSearchUrl } from "../cardmarket";
 
+/** Fields a collection table can be sorted by. */
+export type SortField =
+	| "name"
+	| "setName"
+	| "number"
+	| "variant"
+	| "language"
+	| "quantity"
+	| "price";
+
+export type SortDirection = "asc" | "desc";
+
+/** Human labels for the sortable fields. */
+export const SORT_FIELD_LABELS: Record<SortField, string> = {
+	name: "Card name",
+	setName: "Set",
+	number: "Number",
+	variant: "Variant",
+	language: "Language",
+	quantity: "Quantity",
+	price: "Price",
+};
+
 export const START_MARKER = "<!-- pokemon-collection:start -->";
 export const END_MARKER = "<!-- pokemon-collection:end -->";
 
@@ -200,6 +223,39 @@ export class MarkdownParser {
 	}
 
 	// --- mutation helpers ---------------------------------------------------
+
+	/** Return a new array of entries sorted by `field` in `dir` order. */
+	sortEntries(
+		entries: CollectionEntry[],
+		field: SortField,
+		dir: SortDirection
+	): CollectionEntry[] {
+		const factor = dir === "desc" ? -1 : 1;
+		const sorted = entries.slice().sort((a, b) => {
+			let r: number;
+			switch (field) {
+				case "quantity":
+					r = a.quantity - b.quantity;
+					break;
+				case "price":
+					r = (a.price ?? 0) - (b.price ?? 0);
+					break;
+				case "number":
+					// Numeric-aware compare so "9" < "10" and "SV107" sorts sanely.
+					r = a.number.localeCompare(b.number, undefined, {
+						numeric: true,
+						sensitivity: "base",
+					});
+					break;
+				default:
+					r = String(a[field]).localeCompare(String(b[field]), undefined, {
+						sensitivity: "base",
+					});
+			}
+			return r * factor;
+		});
+		return sorted;
+	}
 
 	/**
 	 * Merge `entry` into the list: if a row with the same key exists, add

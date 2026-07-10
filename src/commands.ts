@@ -2,6 +2,7 @@ import { Editor, MarkdownView, Notice, TFile } from "obsidian";
 import type PokemonCollectionPlugin from "./main";
 import type { CardKey, CollectionEntry } from "./types";
 import { CardSearchModal } from "./ui/CardSearchModal";
+import { SortModal } from "./ui/SortModal";
 
 /** Registers all plugin commands and holds their implementations. */
 export class CommandController {
@@ -43,6 +44,32 @@ export class CommandController {
 			name: "Create dashboard note",
 			callback: () => this.createDashboardNote(),
 		});
+
+		plugin.addCommand({
+			id: "sort-collection-table",
+			name: "Sort collection table",
+			editorCallback: (editor) => this.sortTable(editor),
+		});
+	}
+
+	// --- Sort ---------------------------------------------------------------
+
+	private sortTable(editor: Editor): void {
+		const md = this.plugin.markdown;
+		const content = editor.getValue();
+		if (!md.hasSection(content)) {
+			new Notice("This note has no Pokémon collection table.");
+			return;
+		}
+
+		new SortModal(this.plugin, (field, dir) => {
+			const current = editor.getValue();
+			const entries = md.parseEntries(current);
+			const sorted = md.sortEntries(entries, field, dir);
+			const newContent = md.replaceSection(current, sorted);
+			if (newContent) this.setEditorValue(editor, newContent);
+			new Notice(`Sorted by ${field} (${dir}).`);
+		}).open();
 	}
 
 	// --- Dashboard note -----------------------------------------------------
