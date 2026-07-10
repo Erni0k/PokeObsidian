@@ -3,6 +3,8 @@ import type PokemonCollectionPlugin from "./main";
 import type { CardKey, CollectionEntry } from "./types";
 import { CardSearchModal } from "./ui/CardSearchModal";
 import { SortModal } from "./ui/SortModal";
+import { AddByLinkModal } from "./ui/AddByLinkModal";
+import type { CardSearchQuery } from "./services/ApiService";
 
 /** Registers all plugin commands and holds their implementations. */
 export class CommandController {
@@ -19,6 +21,12 @@ export class CommandController {
 			id: "add-card",
 			name: "Add card",
 			callback: () => this.addCard(),
+		});
+
+		plugin.addCommand({
+			id: "add-card-from-link",
+			name: "Add card from Cardmarket link",
+			callback: () => this.addCardFromLink(),
 		});
 
 		plugin.addCommand({
@@ -122,6 +130,23 @@ export class CommandController {
 
 		new CardSearchModal(this.plugin, (entry, addQty) => {
 			this.insertEntry(editor, entry, addQty);
+		}).open();
+	}
+
+	private addCardFromLink(): void {
+		const view = this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
+		if (!view) {
+			new Notice("Open a note first to add a card into it.");
+			return;
+		}
+		const editor = view.editor;
+
+		new AddByLinkModal(this.plugin, (query: CardSearchQuery) => {
+			new CardSearchModal(
+				this.plugin,
+				(entry, addQty) => this.insertEntry(editor, entry, addQty),
+				query
+			).open();
 		}).open();
 	}
 

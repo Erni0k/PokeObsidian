@@ -1,6 +1,6 @@
 import type PokemonCollectionPlugin from "../main";
 import type { CardKey, CollectionEntry, Variant } from "../types";
-import { cardmarketSearchUrl } from "../cardmarket";
+import { cardmarketUrl } from "../cardmarket";
 
 /** Fields a collection table can be sorted by. */
 export type SortField =
@@ -213,7 +213,7 @@ export class MarkdownParser {
 		if (!e.name) return name;
 		const url =
 			this.plugin.cache.getMeta(e.key)?.cardmarketUrl ??
-			cardmarketSearchUrl(e.name);
+			cardmarketUrl(e.setName, e.name);
 		return `[${name}](${url})`;
 	}
 

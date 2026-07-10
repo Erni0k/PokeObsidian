@@ -1,13 +1,15 @@
 import { Modal, Notice, Setting } from "obsidian";
 import type PokemonCollectionPlugin from "../main";
 import type { CollectionEntry, TcgdexCardBrief } from "../types";
+import type { CardSearchQuery } from "../services/ApiService";
 import { VariantSelectorModal } from "./VariantSelectorModal";
 
 export type AddCardCallback = (entry: CollectionEntry, addQty: number) => void;
 
 /**
  * "Add Card" step 1: search TCGdex by name / number / set and pick a card.
- * Selecting a result opens the {@link VariantSelectorModal}.
+ * Selecting a result opens the {@link VariantSelectorModal}. An optional
+ * initial query pre-fills the fields (e.g. parsed from a Cardmarket link).
  */
 export class CardSearchModal extends Modal {
 	private plugin: PokemonCollectionPlugin;
@@ -19,10 +21,17 @@ export class CardSearchModal extends Modal {
 	private resultsEl!: HTMLElement;
 	private searchTimer: number | null = null;
 
-	constructor(plugin: PokemonCollectionPlugin, onConfirm: AddCardCallback) {
+	constructor(
+		plugin: PokemonCollectionPlugin,
+		onConfirm: AddCardCallback,
+		initial?: CardSearchQuery
+	) {
 		super(plugin.app);
 		this.plugin = plugin;
 		this.onConfirm = onConfirm;
+		this.nameValue = initial?.name ?? "";
+		this.numberValue = initial?.number ?? "";
+		this.setValue = initial?.set ?? "";
 	}
 
 	onOpen(): void {
@@ -34,25 +43,31 @@ export class CardSearchModal extends Modal {
 		new Setting(contentEl)
 			.setName("Card name")
 			.addText((t) => {
-				t.setPlaceholder("Pikachu").onChange((v) => {
-					this.nameValue = v;
-					this.scheduleSearch();
-				});
+				t.setPlaceholder("Pikachu")
+					.setValue(this.nameValue)
+					.onChange((v) => {
+						this.nameValue = v;
+						this.scheduleSearch();
+					});
 				window.setTimeout(() => t.inputEl.focus(), 0);
 			});
 
 		new Setting(contentEl).setName("Card number").addText((t) => {
-			t.setPlaceholder("58").onChange((v) => {
-				this.numberValue = v;
-				this.scheduleSearch();
-			});
+			t.setPlaceholder("58")
+				.setValue(this.numberValue)
+				.onChange((v) => {
+					this.numberValue = v;
+					this.scheduleSearch();
+				});
 		});
 
 		new Setting(contentEl).setName("Set").addText((t) => {
-			t.setPlaceholder("Base Set (name or id)").onChange((v) => {
-				this.setValue = v;
-				this.scheduleSearch();
-			});
+			t.setPlaceholder("Base Set (name or id)")
+				.setValue(this.setValue)
+				.onChange((v) => {
+					this.setValue = v;
+					this.scheduleSearch();
+				});
 		});
 
 		new Setting(contentEl).addButton((b) =>
@@ -67,6 +82,11 @@ export class CardSearchModal extends Modal {
 			text: "Enter a card name (and optionally a number/set), then search.",
 			cls: "pokemon-collection-hint",
 		});
+
+		// Auto-search when pre-filled (e.g. from a Cardmarket link).
+		if (this.nameValue || this.setValue) {
+			void this.runSearch();
+		}
 	}
 
 	onClose(): void {
