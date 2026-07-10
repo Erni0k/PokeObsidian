@@ -42,7 +42,17 @@ Prices come from TCGdex's embedded **Cardmarket** data (EUR) via an abstracted `
 Command **“Open Pokémon Collection Dashboard”** (or the ribbon icon) opens a panel that aggregates every collection note in the configured folder:
 
 - **Statistics:** total cards, unique cards, total value, average value, most expensive card, largest set, sets owned.
-- **Charts (Chart.js):** collection value over time, most valuable cards, collection by set, collection by rarity, collection growth.
+- **Most valuable cards:** top 10 as a visual list — thumbnail, name, price, and a link to the note the card is in.
+- **Charts (Chart.js):** collection value over time, collection by set, collection by rarity, collection growth.
+
+The dashboard also works **inside a note** via a fenced code block:
+
+````markdown
+```pokemon-dashboard
+```
+````
+
+Use the **“Create dashboard note”** command to generate one automatically.
 
 ## Settings
 
@@ -56,7 +66,9 @@ Command **“Open Pokémon Collection Dashboard”** (or the ribbon icon) opens 
 | Auto-update interval | `0` (off) | Minutes between automatic price refreshes |
 | Cache duration | `24` h | Freshness window for API responses |
 | Enable image previews | off | Show card images in modals |
-| Image size | `200` px | Preview width |
+| Image column in table | on | Embed a card thumbnail as the first table column |
+| Image size | `200` px | Preview width (thumbnails capped at 80 px) |
+| Keep table sorted | off | Auto-sort tables after add / price update |
 
 ## Development
 

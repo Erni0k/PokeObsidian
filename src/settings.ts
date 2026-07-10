@@ -43,8 +43,10 @@ export interface PokemonCollectionSettings {
 	defaultQuantity: number;
 	/** Rendered image width in pixels (previews). */
 	imageSize: number;
-	/** Whether to show card image previews. */
+	/** Whether to show card image previews in modals. */
 	enableImagePreviews: boolean;
+	/** Whether to embed a thumbnail Image column in the collection table. */
+	imageColumn: boolean;
 	/** Folder scanned by the dashboard for collection notes. */
 	collectionFolder: string;
 	/** Keep collection tables sorted automatically after every change. */
@@ -64,6 +66,7 @@ export const DEFAULT_SETTINGS: PokemonCollectionSettings = {
 	defaultQuantity: 1,
 	imageSize: 200,
 	enableImagePreviews: false,
+	imageColumn: true,
 	collectionFolder: "Pokemon",
 	autoSort: false,
 	autoSortField: "name",
@@ -233,6 +236,20 @@ export class PokemonCollectionSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.enableImagePreviews)
 					.onChange(async (value) => {
 						this.plugin.settings.enableImagePreviews = value;
+						await this.plugin.saveSettings();
+					});
+			});
+
+		new Setting(containerEl)
+			.setName("Image column in table")
+			.setDesc(
+				"Embed a card thumbnail as the first column. Applied the next time the plugin rewrites a table (add card / update prices / sort)."
+			)
+			.addToggle((toggle) => {
+				toggle
+					.setValue(this.plugin.settings.imageColumn)
+					.onChange(async (value) => {
+						this.plugin.settings.imageColumn = value;
 						await this.plugin.saveSettings();
 					});
 			});

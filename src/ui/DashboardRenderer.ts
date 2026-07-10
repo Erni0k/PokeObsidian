@@ -4,7 +4,7 @@ import type {
 	AggregatedCard,
 	CollectionStats,
 } from "../services/CollectionService";
-import { barChart, lineChart, pieChart } from "./charts";
+import { lineChart, pieChart } from "./charts";
 
 /**
  * Renders the dashboard (statistics + charts) into `root` and returns the
@@ -102,21 +102,13 @@ function renderCharts(
 		);
 	}
 
-	// Most valuable cards (top 10 by unit price).
+	// Most valuable cards: top 10 with image, name, price and source note.
 	const top = [...cards]
 		.filter((c) => c.unitPrice > 0)
 		.sort((a, b) => b.unitPrice - a.unitPrice)
 		.slice(0, 10);
 	if (top.length) {
-		const canvas = chartBlock(root, "Most valuable cards");
-		charts.push(
-			barChart(
-				canvas,
-				top.map((c) => `${c.name} (${c.variant})`),
-				top.map((c) => c.unitPrice),
-				"Unit price"
-			)
-		);
+		renderTopValuable(plugin, root, top);
 	}
 
 	// Collection by set (quantity).
@@ -140,6 +132,53 @@ function renderCharts(
 		charts.push(
 			lineChart(canvas, growth.labels, growth.values, "Unique cards")
 		);
+	}
+}
+
+/** Top-10 most valuable cards as a visual list (image + name + price + note). */
+function renderTopValuable(
+	plugin: PokemonCollectionPlugin,
+	root: HTMLElement,
+	top: AggregatedCard[]
+): void {
+	const block = root.createDiv({ cls: "pokemon-collection-chart" });
+	block.createEl("h3", { text: "Most valuable cards" });
+	const list = block.createDiv({ cls: "pokemon-collection-top-list" });
+	const cur = plugin.price.currency === "EUR" ? "€" : "";
+
+	for (const c of top) {
+		const row = list.createDiv({ cls: "pokemon-collection-top-row" });
+
+		const url = plugin.api.imageUrl(c.image, "low");
+		if (url) {
+			const img = row.createEl("img", { cls: "pokemon-collection-top-img" });
+			img.src = url;
+		}
+
+		const info = row.createDiv({ cls: "pokemon-collection-top-info" });
+		info.createEl("div", {
+			cls: "pokemon-collection-top-name",
+			text: `${c.name} · ${c.variant}`,
+		});
+
+		const notes = info.createDiv({ cls: "pokemon-collection-top-notes" });
+		notes.createSpan({ text: "in " });
+		c.notePaths.forEach((path, i) => {
+			if (i > 0) notes.createSpan({ text: ", " });
+			const link = notes.createEl("a", {
+				text: path.replace(/\.md$/, "").split("/").pop() ?? path,
+				cls: "pokemon-collection-note-link",
+			});
+			link.onclick = (ev) => {
+				ev.preventDefault();
+				void plugin.app.workspace.openLinkText(path, "", false);
+			};
+		});
+
+		row.createDiv({
+			cls: "pokemon-collection-top-price",
+			text: `${cur}${c.unitPrice.toFixed(2)}`,
+		});
 	}
 }
 

@@ -28,7 +28,12 @@ export const SORT_FIELD_LABELS: Record<SortField, string> = {
 export const START_MARKER = "<!-- pokemon-collection:start -->";
 export const END_MARKER = "<!-- pokemon-collection:end -->";
 
-export const TABLE_COLUMNS = [
+/**
+ * The stable, always-present columns (identity + user-editable fields). An
+ * optional leading "Image" column may be added based on settings; parsing is
+ * offset-tolerant so tables with or without it both round-trip.
+ */
+export const BASE_COLUMNS = [
 	"Card",
 	"Set",
 	"Number",
@@ -39,8 +44,9 @@ export const TABLE_COLUMNS = [
 	"ID",
 ] as const;
 
-const TABLE_HEADER = `| ${TABLE_COLUMNS.join(" | ")} |`;
-const TABLE_SEP = `| ${TABLE_COLUMNS.map(() => "---").join(" | ")} |`;
+const BASE_COL_COUNT = BASE_COLUMNS.length;
+/** Max width (px) for in-table thumbnails, so rows stay compact. */
+const MAX_TABLE_IMG_WIDTH = 80;
 
 /** Region of a note occupied by a collection section (character offsets). */
 export interface SectionRegion {
@@ -131,13 +137,23 @@ export class MarkdownParser {
 		const trimmed = line.trim();
 		if (!trimmed.startsWith("|")) return null;
 		const cells = this.splitRow(trimmed);
-		// Skip header + separator rows.
-		if (cells[0]?.toLowerCase() === "card") return null;
-		if (/^-{2,}$/.test(cells[0]?.replace(/\s/g, "") ?? "")) return null;
-		if (cells.length < TABLE_COLUMNS.length) return null;
+		if (cells.length < BASE_COL_COUNT) return null;
+		// Tolerate an optional leading "Image" column (or other extras): the
+		// stable columns are always the last BASE_COL_COUNT cells.
+		const off = cells.length - BASE_COL_COUNT;
 
-		const [nameCell, setName, number, variant, language, qtyStr, priceStr, idCell] =
-			cells;
+		// Skip header + separator rows.
+		if (cells[off]?.toLowerCase() === "card") return null;
+		if (/^-{2,}$/.test(cells[off]?.replace(/\s/g, "") ?? "")) return null;
+
+		const nameCell = cells[off];
+		const setName = cells[off + 1];
+		const number = cells[off + 2];
+		const variant = cells[off + 3];
+		const language = cells[off + 4];
+		const qtyStr = cells[off + 5];
+		const priceStr = cells[off + 6];
+		const idCell = cells[off + 7];
 
 		const name = this.stripLink(nameCell ?? "");
 
@@ -201,8 +217,35 @@ export class MarkdownParser {
 		return `[${name}](${url})`;
 	}
 
+	/** Whether the optional leading Image column is enabled. */
+	private imageColumnEnabled(): boolean {
+		return this.plugin.settings.imageColumn;
+	}
+
+	/** Column headers, optionally prefixed with "Image". */
+	private columns(): string[] {
+		return this.imageColumnEnabled()
+			? ["Image", ...BASE_COLUMNS]
+			: [...BASE_COLUMNS];
+	}
+
+	/**
+	 * A sized, table-safe thumbnail. We use an HTML <img> with an explicit
+	 * width: it renders reliably in Obsidian tables (unlike the escaped-pipe
+	 * Markdown width syntax) and contains no pipe, so it never splits the cell
+	 * or our own row parser.
+	 */
+	private imageCell(e: CollectionEntry): string {
+		const base = this.plugin.cache.getMeta(e.key)?.image;
+		const url = this.plugin.api.imageUrl(base, "low");
+		if (!url) return "";
+		const width = Math.min(this.plugin.settings.imageSize, MAX_TABLE_IMG_WIDTH);
+		const alt = e.name.replace(/["|]/g, " ");
+		return `<img src="${url}" width="${width}" alt="${alt}">`;
+	}
+
 	private renderRow(e: CollectionEntry): string {
-		const cells = [
+		const baseCells = [
 			this.nameCell(e),
 			this.escape(e.setName),
 			this.escape(e.number),
@@ -212,13 +255,19 @@ export class MarkdownParser {
 			this.formatPrice(e.price),
 			this.escape(e.key),
 		];
+		const cells = this.imageColumnEnabled()
+			? [this.imageCell(e), ...baseCells]
+			: baseCells;
 		return `| ${cells.join(" | ")} |`;
 	}
 
 	/** Full section text (markers + table) for the given entries. */
 	renderSection(entries: CollectionEntry[]): string {
+		const cols = this.columns();
+		const header = `| ${cols.join(" | ")} |`;
+		const sep = `| ${cols.map(() => "---").join(" | ")} |`;
 		const rows = entries.map((e) => this.renderRow(e));
-		const table = [TABLE_HEADER, TABLE_SEP, ...rows].join("\n");
+		const table = [header, sep, ...rows].join("\n");
 		return `${START_MARKER}\n${table}\n${END_MARKER}`;
 	}
 

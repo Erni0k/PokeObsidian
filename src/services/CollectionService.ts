@@ -14,6 +14,10 @@ export interface AggregatedCard {
 	unitPrice: number;
 	rarity: string;
 	dateAdded?: string;
+	/** Base image URL from the meta cache (without quality/extension). */
+	image?: string;
+	/** Vault paths of the notes this card appears in. */
+	notePaths: string[];
 }
 
 export interface CollectionStats {
@@ -75,6 +79,9 @@ export class CollectionService {
 					existing.quantity += e.quantity;
 					// Prefer a non-zero price if we have one.
 					if (!existing.unitPrice && unit) existing.unitPrice = unit;
+					if (!existing.notePaths.includes(file.path)) {
+						existing.notePaths.push(file.path);
+					}
 				} else {
 					byKey.set(e.key, {
 						key: e.key,
@@ -87,6 +94,8 @@ export class CollectionService {
 						unitPrice: unit,
 						rarity: meta?.rarity ?? "Unknown",
 						dateAdded: meta?.dateAdded,
+						image: meta?.image,
+						notePaths: [file.path],
 					});
 				}
 			}
