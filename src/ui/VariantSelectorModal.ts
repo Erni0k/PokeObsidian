@@ -1,15 +1,34 @@
-import { Modal, Notice, Setting } from "obsidian";
+import { Modal, Notice, Setting, TextComponent } from "obsidian";
 import type PokemonCollectionPlugin from "../main";
 import {
 	CollectionEntry,
-	KnownVariant,
 	TcgdexCardFull,
+	TcgdexVariantDetailed,
 	VARIANT_LABELS,
 } from "../types";
 import { CardmarketProvider } from "../services/PriceService";
 import type { AddCardCallback } from "./CardSearchModal";
 
 const CUSTOM = "__custom__";
+
+/** A selectable variant option shown in the dropdown. */
+interface VariantOption {
+	value: string;
+	label: string;
+	detail?: TcgdexVariantDetailed;
+}
+
+const TYPE_LABEL: Record<string, string> = {
+	normal: "Normal",
+	reverse: "Reverse Holo",
+	holo: "Holo",
+};
+
+function prettify(s: string): string {
+	return s
+		.replace(/-/g, " ")
+		.replace(/\b\w/g, (c) => c.toUpperCase());
+}
 
 /**
  * "Add Card" step 2: choose a variant (TCGdex-exposed booleans + a custom
@@ -27,6 +46,11 @@ export class VariantSelectorModal extends Modal {
 	private quantity: number;
 	private price: number | undefined;
 
+	private provider = new CardmarketProvider();
+	private options: VariantOption[];
+	private priceComp?: TextComponent;
+	private priceEdited = false;
+
 	private customSetting?: Setting;
 
 	constructor(
@@ -41,24 +65,75 @@ export class VariantSelectorModal extends Modal {
 		this.onConfirm = onConfirm;
 		this.lang = lang || plugin.settings.preferredLanguage || "en";
 
-		const available = this.availableVariants();
-		this.selectedVariant = available[0] ?? "normal";
+		this.options = this.variantOptions();
+		this.selectedVariant = this.defaultVariant();
 		this.language = this.lang.toUpperCase();
 		this.quantity = plugin.settings.defaultQuantity;
-		this.price = new CardmarketProvider().priceFromCard(card);
+		this.price = this.priceForValue(this.selectedVariant);
 	}
 
-	/** Known variants that TCGdex flagged true for this card. */
-	private availableVariants(): KnownVariant[] {
+	/**
+	 * Variants the card actually has, preferring the accurate `variants_detailed`
+	 * (so a holo-only card never offers "Normal"), with the boolean `variants`
+	 * as a fallback.
+	 */
+	private variantOptions(): VariantOption[] {
+		const detailed = this.card.variants_detailed;
+		if (detailed && detailed.length) {
+			const seen = new Set<string>();
+			const out: VariantOption[] = [];
+			for (const d of detailed) {
+				const value = this.detailValue(d);
+				if (seen.has(value)) continue;
+				seen.add(value);
+				out.push({ value, label: this.detailLabel(d), detail: d });
+			}
+			if (out.length) return out;
+		}
+
 		const v = this.card.variants ?? {};
-		const out: KnownVariant[] = [];
-		if (v.normal) out.push("normal");
-		if (v.reverse) out.push("reverse");
-		if (v.holo) out.push("holo");
-		if (v.firstEdition) out.push("firstEdition");
-		if (v.wPromo) out.push("promo");
-		if (out.length === 0) out.push("normal");
+		const out: VariantOption[] = [];
+		if (v.normal) out.push({ value: "normal", label: VARIANT_LABELS.normal });
+		if (v.reverse) out.push({ value: "reverse", label: VARIANT_LABELS.reverse });
+		if (v.holo) out.push({ value: "holo", label: VARIANT_LABELS.holo });
+		if (v.firstEdition)
+			out.push({ value: "firstEdition", label: VARIANT_LABELS.firstEdition });
+		if (v.wPromo) out.push({ value: "promo", label: VARIANT_LABELS.promo });
+		if (!out.length) out.push({ value: "normal", label: VARIANT_LABELS.normal });
 		return out;
+	}
+
+	/** Stable variant string for a detailed printing (no pipe/colon). */
+	private detailValue(d: TcgdexVariantDetailed): string {
+		const parts = [d.type];
+		if (d.subtype) parts.push(d.subtype);
+		if (d.stamp?.length) parts.push(...d.stamp);
+		return parts.join("-").toLowerCase();
+	}
+
+	private detailLabel(d: TcgdexVariantDetailed): string {
+		const base = TYPE_LABEL[d.type] ?? prettify(d.type);
+		const extras: string[] = [];
+		if (d.subtype) extras.push(prettify(d.subtype));
+		if (d.stamp?.length) extras.push(...d.stamp.map(prettify));
+		return extras.length ? `${base} (${extras.join(", ")})` : base;
+	}
+
+	/** Pick a sensible default: the only option, else normal, else the first. */
+	private defaultVariant(): string {
+		if (this.options.length === 1) return this.options[0].value;
+		const normal = this.options.find((o) => o.value === "normal");
+		return (normal ?? this.options[0]).value;
+	}
+
+	/** Market price for a variant value, preferring its own detailed pricing. */
+	private priceForValue(value: string): number | undefined {
+		const opt = this.options.find((o) => o.value === value);
+		if (opt?.detail) {
+			const p = this.provider.priceFromDetail(opt.detail);
+			if (p !== undefined) return p;
+		}
+		return this.provider.priceFor(this.card, value);
 	}
 
 	onOpen(): void {
@@ -104,19 +179,17 @@ export class VariantSelectorModal extends Modal {
 			img.style.maxWidth = `${this.plugin.settings.imageSize}px`;
 		}
 
-		const available = this.availableVariants();
 		new Setting(contentEl)
 			.setName("Variant")
-			.setDesc("Choose an available variant or define a custom one.")
+			.setDesc("Variants this card actually has, from TCGdex.")
 			.addDropdown((dd) => {
-				for (const v of available) {
-					dd.addOption(v, VARIANT_LABELS[v]);
-				}
+				for (const o of this.options) dd.addOption(o.value, o.label);
 				dd.addOption(CUSTOM, "Custom…");
 				dd.setValue(this.selectedVariant);
 				dd.onChange((value) => {
 					this.selectedVariant = value;
 					this.toggleCustom(value === CUSTOM);
+					this.onVariantChanged();
 				});
 			});
 
@@ -145,15 +218,13 @@ export class VariantSelectorModal extends Modal {
 
 		new Setting(contentEl)
 			.setName("Price (EUR)")
-			.setDesc(
-				this.price !== undefined
-					? "Auto-filled from Cardmarket. Editable."
-					: "No market price available — enter manually if you like."
-			)
+			.setDesc("Auto-filled per variant from Cardmarket. Editable.")
 			.addText((t) => {
+				this.priceComp = t;
 				t.setPlaceholder("0.00")
 					.setValue(this.price !== undefined ? this.price.toFixed(2) : "")
 					.onChange((v) => {
+						this.priceEdited = true;
 						this.price = this.plugin.markdown.parsePrice(v);
 					});
 			});
@@ -174,6 +245,15 @@ export class VariantSelectorModal extends Modal {
 
 	private toggleCustom(show: boolean): void {
 		this.customSetting?.settingEl.toggle(show);
+	}
+
+	/** Re-price when the variant changes, unless the user edited the price. */
+	private onVariantChanged(): void {
+		if (this.priceEdited || this.selectedVariant === CUSTOM) return;
+		this.price = this.priceForValue(this.selectedVariant);
+		this.priceComp?.setValue(
+			this.price !== undefined ? this.price.toFixed(2) : ""
+		);
 	}
 
 	private resolvedVariant(): string {

@@ -144,6 +144,18 @@ export interface TcgdexCardFull {
 	rarity?: string;
 	set?: TcgdexSetRef;
 	variants?: TcgdexVariants;
+	variants_detailed?: TcgdexVariantDetailed[];
+	pricing?: TcgdexPricing;
+}
+
+/** One concrete printing of a card (type + optional subtype/stamp + pricing). */
+export interface TcgdexVariantDetailed {
+	type: "normal" | "reverse" | "holo" | string;
+	subtype?: string;
+	stamp?: string[];
+	size?: string;
+	variantId?: string;
+	thirdParty?: { cardmarket?: number; tcgplayer?: number };
 	pricing?: TcgdexPricing;
 }
 
@@ -179,6 +191,13 @@ export interface TcgdexMarketPricing {
 	avg7?: number;
 	avg30?: number;
 	low?: number;
+	// Holo / reverse-holo prices (Cardmarket uses hyphenated keys).
+	"trend-holo"?: number;
+	"avg-holo"?: number;
+	"avg1-holo"?: number;
+	"avg7-holo"?: number;
+	"avg30-holo"?: number;
+	"low-holo"?: number;
 }
 
 /** Brief set as returned by `/sets`. */
