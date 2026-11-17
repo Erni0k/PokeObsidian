@@ -16,6 +16,25 @@ export interface CardSearchQuery {
 	set?: string;
 }
 
+/** Result of resolving a "set code + number" lookup. */
+export interface CodeLookupResult {
+	/** Resolved set id, if the code was recognized. */
+	setId?: string;
+	/** Set display name (for messages). */
+	setName?: string;
+	/** Matching card brief, if a card with that number exists in the set. */
+	brief?: TcgdexCardBrief;
+}
+
+/** Compare collector numbers leniently ("062" == "62", case-insensitive). */
+export function sameNumber(localId: string | undefined, num: string): boolean {
+	if (!localId) return false;
+	const a = String(localId).toUpperCase();
+	const b = num.toUpperCase();
+	if (a === b) return true;
+	return a.replace(/^0+/, "") === b.replace(/^0+/, "");
+}
+
 /**
  * Thin TCGdex REST client built on Obsidian's `requestUrl` so it works on both
  * desktop and mobile (bypasses CORS). All GETs are cached through
@@ -95,6 +114,32 @@ export class ApiService {
 	async getCard(id: string, lang?: string): Promise<TcgdexCardFull | null> {
 		const path = `/cards/${encodeURIComponent(id)}`;
 		return await this.get<TcgdexCardFull>(path, lang);
+	}
+
+	/**
+	 * Resolve a set code + collector number to a card brief. `deep` allows
+	 * lazily building the set index to resolve an unknown code (network-heavy).
+	 */
+	async findCardByCodeNumber(
+		code: string,
+		num: string,
+		lang?: string,
+		deep = false
+	): Promise<CodeLookupResult> {
+		let setId = this.plugin.setIndex.findSetIdByCode(code, lang);
+		// A lowercase/numeric token may be a raw set id — verify by fetching it.
+		if (!setId && /[a-z0-9]/.test(code) && code === code.toLowerCase()) {
+			const maybe = await this.getSet(code.toLowerCase(), lang);
+			if (maybe?.cards?.length) setId = maybe.id;
+		}
+		if (!setId && deep) {
+			setId = await this.plugin.setIndex.resolveCode(code, lang);
+		}
+		if (!setId) return {};
+
+		const set = await this.getSet(setId, lang);
+		const brief = set?.cards?.find((c) => sameNumber(c.localId, num));
+		return { setId, setName: set?.name, brief: brief ?? undefined };
 	}
 
 	/** Full set details (includes the Cardmarket abbreviation). */

@@ -5,17 +5,9 @@ import type { CardSearchQuery } from "../services/ApiService";
 import { SUPPORTED_LANGUAGES } from "../settings";
 import { VariantSelectorModal } from "./VariantSelectorModal";
 import { ManualAddModal } from "./ManualAddModal";
+import { SetSuggest } from "./SetSuggest";
 
 export type AddCardCallback = (entry: CollectionEntry, addQty: number) => void;
-
-/** Compare collector numbers leniently ("062" == "62", case-insensitive). */
-function sameNumber(localId: string | undefined, num: string): boolean {
-	if (!localId) return false;
-	const a = String(localId).toUpperCase();
-	const b = num.toUpperCase();
-	if (a === b) return true;
-	return a.replace(/^0+/, "") === b.replace(/^0+/, "");
-}
 
 /**
  * "Add Card" step 1: search TCGdex by name / number / set and pick a card.
@@ -29,6 +21,8 @@ export class CardSearchModal extends Modal {
 	private nameValue = "";
 	private numberValue = "";
 	private setValue = "";
+	/** Exact set id chosen from autocomplete (overrides the free-text set). */
+	private pickedSetId: string | undefined;
 	private lang: string;
 	private resultsEl!: HTMLElement;
 	private searchTimer: number | null = null;
@@ -86,9 +80,20 @@ export class CardSearchModal extends Modal {
 				.setValue(this.setValue)
 				.onChange((v) => {
 					this.setValue = v;
+					this.pickedSetId = undefined; // manual typing clears the pick
 					this.scheduleSearch();
 				});
 			this.onEnter(t.inputEl);
+			new SetSuggest(
+				this.plugin,
+				t.inputEl,
+				() => this.lang,
+				(entry) => {
+					this.pickedSetId = entry.id;
+					this.setValue = entry.name;
+					void this.runSearch(true);
+				}
+			);
 		});
 
 		new Setting(contentEl)
@@ -162,7 +167,7 @@ export class CardSearchModal extends Modal {
 
 		const name = this.nameValue.trim();
 		const number = this.numberValue.trim();
-		const set = this.setValue.trim();
+		const set = this.pickedSetId ?? this.setValue.trim();
 		if (!name && !set) {
 			return; // need at least a name or a set
 		}
@@ -217,20 +222,14 @@ export class CardSearchModal extends Modal {
 		deep: boolean
 	): Promise<void> {
 		this.setHint(`Looking up ${code.toUpperCase()} ${num}…`);
+		const res = await this.plugin.api.findCardByCodeNumber(
+			code,
+			num,
+			this.lang,
+			deep
+		);
 
-		let setId = this.plugin.setIndex.findSetIdByCode(code, this.lang);
-
-		// A lowercase/numeric token may be a raw set id — verify by fetching it.
-		if (!setId && /[a-z0-9]/.test(code) && code === code.toLowerCase()) {
-			const maybe = await this.plugin.api.getSet(code.toLowerCase(), this.lang);
-			if (maybe?.cards?.length) setId = maybe.id;
-		}
-		// Only the explicit Search/Enter path may build the index (network-heavy).
-		if (!setId && deep) {
-			setId = await this.plugin.setIndex.resolveCode(code, this.lang);
-		}
-
-		if (!setId) {
+		if (!res.setId) {
 			this.setHint(
 				deep
 					? `Set code "${code.toUpperCase()}" not recognized. Try "Rebuild Pokémon set index", or search by set name.`
@@ -238,14 +237,11 @@ export class CardSearchModal extends Modal {
 			);
 			return;
 		}
-
-		const set = await this.plugin.api.getSet(setId, this.lang);
-		const match = set?.cards?.find((c) => sameNumber(c.localId, num));
-		if (!match) {
-			this.setHint(`No card #${num} in ${set?.name ?? setId}.`);
+		if (!res.brief) {
+			this.setHint(`No card #${num} in ${res.setName ?? res.setId}.`);
 			return;
 		}
-		await this.pickCard(match);
+		await this.pickCard(res.brief);
 	}
 
 	/** Get the set's short code, caching the in-flight promise per set. */

@@ -7,6 +7,7 @@ import {
 	VARIANT_LABELS,
 } from "../types";
 import { CardmarketProvider } from "../services/PriceService";
+import { buildEntryFromCard } from "./buildEntry";
 import type { AddCardCallback } from "./CardSearchModal";
 
 const CUSTOM = "__custom__";
@@ -278,43 +279,15 @@ export class VariantSelectorModal extends Modal {
 
 	private async doConfirm(): Promise<void> {
 		const variant = this.resolvedVariant();
-		const id = this.card.id;
-		const key = this.plugin.markdown.keyOf(id, variant);
-		const now = new Date().toISOString();
-		const cardmarketUrl = await this.plugin.api.cardmarketUrlForCard(
+		const entry = await buildEntryFromCard(
+			this.plugin,
 			this.card,
-			this.lang
-		);
-
-		// Persist metadata (image, rarity, price…) to the cache keyed by id:variant.
-		await this.plugin.cache.putMeta(key, {
-			id,
-			name: this.card.name,
-			setName: this.card.set?.name ?? "",
-			setCode: this.card.set?.id ?? "",
-			rarity: this.card.rarity,
-			image: this.card.image,
-			setIcon: this.card.set?.symbol,
-			cardUrl: this.plugin.api.cardPageUrl(id),
-			marketPrice: this.price,
-			currency: "EUR",
-			cardmarketId: this.card.pricing?.cardmarket?.idProduct,
-			cardmarketUrl,
-			lastPriceUpdate: this.price !== undefined ? now : undefined,
-			dateAdded: this.plugin.cache.getMeta(key)?.dateAdded ?? now,
-		});
-
-		const entry: CollectionEntry = {
-			id,
-			name: this.card.name,
-			setName: this.card.set?.name ?? "",
-			number: (this.card.localId ?? "").toString(),
 			variant,
-			language: this.language,
-			quantity: this.quantity,
-			price: this.price,
-			key,
-		};
+			this.lang,
+			this.quantity,
+			this.price,
+			this.language
+		);
 
 		this.onConfirm(entry, this.quantity);
 		new Notice(`Added ${entry.quantity}× ${entry.name} (${variant}).`);

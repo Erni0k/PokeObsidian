@@ -5,6 +5,7 @@ import { CardSearchModal } from "./ui/CardSearchModal";
 import { SortModal } from "./ui/SortModal";
 import { AddByLinkModal } from "./ui/AddByLinkModal";
 import { ManualAddModal } from "./ui/ManualAddModal";
+import { BulkAddModal, BulkItem } from "./ui/BulkAddModal";
 import type { CardSearchQuery } from "./services/ApiService";
 
 /** Registers all plugin commands and holds their implementations. */
@@ -34,6 +35,12 @@ export class CommandController {
 			id: "add-card-manually",
 			name: "Add card manually",
 			callback: () => this.addCardManually(),
+		});
+
+		plugin.addCommand({
+			id: "bulk-add",
+			name: "Bulk add cards from list",
+			callback: () => this.bulkAdd(),
 		});
 
 		plugin.addCommand({
@@ -167,6 +174,48 @@ export class CommandController {
 		new ManualAddModal(this.plugin, (entry, addQty) =>
 			void this.insertEntry(file, entry, addQty)
 		).open();
+	}
+
+	private bulkAdd(): void {
+		const file = this.plugin.app.workspace.getActiveFile();
+		if (!file || file.extension !== "md") {
+			new Notice("Open a note first to add cards into it.");
+			return;
+		}
+		new BulkAddModal(this.plugin, (items) =>
+			this.insertEntries(file, items)
+		).open();
+	}
+
+	/** Insert many resolved cards into `file` in a single read/modify/write. */
+	private async insertEntries(file: TFile, items: BulkItem[]): Promise<void> {
+		if (!items.length) return;
+		try {
+			const apply = (content: string): string => {
+				let c = content;
+				for (const it of items) c = this.withEntry(c, it.entry, it.qty);
+				return c;
+			};
+			const view =
+				this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
+			const editor =
+				view && view.file === file && view.getMode() === "source"
+					? view.editor
+					: null;
+			if (editor) {
+				this.setEditorValue(editor, apply(editor.getValue()));
+			} else {
+				const content = await this.plugin.app.vault.read(file);
+				await this.plugin.app.vault.modify(file, apply(content));
+			}
+		} catch (err) {
+			console.error("[pokemon-collection] bulk insert failed", err);
+			new Notice(
+				`Could not write cards: ${
+					err instanceof Error ? err.message : String(err)
+				}`
+			);
+		}
 	}
 
 	private addCardFromLink(): void {
