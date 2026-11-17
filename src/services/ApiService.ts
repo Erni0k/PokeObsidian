@@ -137,18 +137,25 @@ export class ApiService {
 		card: TcgdexCardFull,
 		lang?: string
 	): Promise<string> {
-		const setName = card.set?.name;
-		if (!setName) return cardmarketSearchUrl(card.name);
+		const l = lang || this.lang;
+		// Cardmarket uses English card + set names, so always build from EN data.
+		const en = l === "en" ? card : await this.getCard(card.id, "en");
+
+		if (!en?.set?.name) {
+			// No English set data (e.g. a Japanese-only set) — don't slug a
+			// localized name; fall back to a search by the best name we have.
+			return cardmarketSearchUrl(en?.name ?? card.name);
+		}
 
 		let code: string | undefined;
-		const setId = card.set?.id;
+		const setId = en.set.id;
 		if (setId) {
-			const set = await this.getSet(setId, lang);
+			const set = await this.getSet(setId, "en");
 			const abbr = set?.abbreviation?.official;
-			const num = this.cardmarketNumber(card.localId);
+			const num = this.cardmarketNumber(en.localId);
 			if (abbr && num) code = `${abbr}${num}`;
 		}
-		return cardmarketSingleUrl(setName, card.name, code);
+		return cardmarketSingleUrl(en.set.name, en.name, code);
 	}
 
 	/** Format a card's local id the way Cardmarket does (zero-pad numeric to 3). */
