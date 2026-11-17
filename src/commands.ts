@@ -65,6 +65,25 @@ export class CommandController {
 			name: "Sort collection table",
 			editorCallback: (editor) => this.sortTable(editor),
 		});
+
+		plugin.addCommand({
+			id: "refresh-sets",
+			name: "Refresh Pokémon sets",
+			callback: () =>
+				void this.plugin.setIndex.refreshSets(
+					this.plugin.settings.preferredLanguage
+				),
+		});
+
+		plugin.addCommand({
+			id: "rebuild-set-index",
+			name: "Rebuild Pokémon set index",
+			callback: () =>
+				void this.plugin.setIndex.rebuild([
+					this.plugin.settings.preferredLanguage,
+					"en",
+				]),
+		});
 	}
 
 	// --- Sort ---------------------------------------------------------------

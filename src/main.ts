@@ -8,6 +8,7 @@ import { ApiService } from "./services/ApiService";
 import { CacheService } from "./services/CacheService";
 import { PriceService } from "./services/PriceService";
 import { CollectionService } from "./services/CollectionService";
+import { SetIndexService } from "./services/SetIndexService";
 import { MarkdownParser } from "./parser/MarkdownParser";
 import { CommandController } from "./commands";
 import { DashboardBlock } from "./ui/DashboardBlock";
@@ -23,6 +24,7 @@ export default class PokemonCollectionPlugin extends Plugin {
 	api!: ApiService;
 	price!: PriceService;
 	collection!: CollectionService;
+	setIndex!: SetIndexService;
 	markdown!: MarkdownParser;
 
 	commands!: CommandController;
@@ -38,6 +40,8 @@ export default class PokemonCollectionPlugin extends Plugin {
 		this.price = new PriceService(this);
 		this.markdown = new MarkdownParser(this);
 		this.collection = new CollectionService(this);
+		this.setIndex = new SetIndexService(this);
+		await this.setIndex.load();
 
 		// Commands.
 		this.commands = new CommandController(this);

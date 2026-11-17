@@ -100,7 +100,17 @@ export class ApiService {
 	/** Full set details (includes the Cardmarket abbreviation). */
 	async getSet(id: string, lang?: string): Promise<TcgdexSetFull | null> {
 		const path = `/sets/${encodeURIComponent(id)}`;
-		return await this.get<TcgdexSetFull>(path, lang);
+		const set = await this.get<TcgdexSetFull>(path, lang);
+		if (set) this.plugin.setIndex?.noteFull(lang || this.lang, set);
+		return set;
+	}
+
+	/** The full set list for a language, recorded into the set index. */
+	async getSets(lang?: string, force = false): Promise<TcgdexSetBrief[]> {
+		const list =
+			(await this.get<TcgdexSetBrief[]>("/sets", lang, force)) ?? [];
+		if (list.length) this.plugin.setIndex?.noteBriefs(lang || this.lang, list);
+		return list;
 	}
 
 	/** The set id embedded in a card id ("sv10-021" → "sv10"). */
@@ -150,7 +160,7 @@ export class ApiService {
 
 	/** Search sets by name (for the set filter dropdown / autocomplete). */
 	async searchSets(name: string, lang?: string): Promise<TcgdexSetBrief[]> {
-		const all = (await this.get<TcgdexSetBrief[]>("/sets", lang)) ?? [];
+		const all = await this.getSets(lang);
 		const lc = name.trim().toLowerCase();
 		if (!lc) return all;
 		return all.filter((s) => s.name?.toLowerCase().includes(lc));
@@ -180,11 +190,17 @@ export class ApiService {
 	 * Cached GET. Returns fresh cache when available, otherwise fetches; on
 	 * network error falls back to stale cache (offline support).
 	 */
-	private async get<T>(path: string, lang?: string): Promise<T | null> {
+	private async get<T>(
+		path: string,
+		lang?: string,
+		force = false
+	): Promise<T | null> {
 		const l = lang || this.lang;
 		const cacheKey = `${l}${path}`;
-		const fresh = this.plugin.cache.getFresh<T>(cacheKey);
-		if (fresh !== undefined) return fresh;
+		if (!force) {
+			const fresh = this.plugin.cache.getFresh<T>(cacheKey);
+			if (fresh !== undefined) return fresh;
+		}
 
 		const url = `${BASE_URL}/${l}${path}`;
 		try {

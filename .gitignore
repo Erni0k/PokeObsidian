@@ -19,3 +19,6 @@ Thumbs.db
 CLAUDE.md
 .claude-*/
 **/memory/
+
+# local planning notes (not shipped)
+docs/improvement-prompts.md
