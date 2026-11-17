@@ -8,6 +8,15 @@ import { ManualAddModal } from "./ManualAddModal";
 
 export type AddCardCallback = (entry: CollectionEntry, addQty: number) => void;
 
+/** Compare collector numbers leniently ("062" == "62", case-insensitive). */
+function sameNumber(localId: string | undefined, num: string): boolean {
+	if (!localId) return false;
+	const a = String(localId).toUpperCase();
+	const b = num.toUpperCase();
+	if (a === b) return true;
+	return a.replace(/^0+/, "") === b.replace(/^0+/, "");
+}
+
 /**
  * "Add Card" step 1: search TCGdex by name / number / set and pick a card.
  * Selecting a result opens the {@link VariantSelectorModal}. An optional
@@ -55,17 +64,22 @@ export class CardSearchModal extends Modal {
 						this.nameValue = v;
 						this.scheduleSearch();
 					});
+				this.onEnter(t.inputEl);
 				window.setTimeout(() => t.inputEl.focus(), 0);
 			});
 
-		new Setting(contentEl).setName("Card number").addText((t) => {
-			t.setPlaceholder("58")
-				.setValue(this.numberValue)
-				.onChange((v) => {
-					this.numberValue = v;
-					this.scheduleSearch();
-				});
-		});
+		new Setting(contentEl)
+			.setName("Card number")
+			.setDesc("Tip: type a set code + number here, e.g. \"DRI 062\".")
+			.addText((t) => {
+				t.setPlaceholder("58  ·  DRI 062  ·  sv10-021")
+					.setValue(this.numberValue)
+					.onChange((v) => {
+						this.numberValue = v;
+						this.scheduleSearch();
+					});
+				this.onEnter(t.inputEl);
+			});
 
 		new Setting(contentEl).setName("Set").addText((t) => {
 			t.setPlaceholder("Base Set (name or id)")
@@ -74,6 +88,7 @@ export class CardSearchModal extends Modal {
 					this.setValue = v;
 					this.scheduleSearch();
 				});
+			this.onEnter(t.inputEl);
 		});
 
 		new Setting(contentEl)
@@ -93,7 +108,7 @@ export class CardSearchModal extends Modal {
 				b
 					.setButtonText("Search")
 					.setCta()
-					.onClick(() => this.runSearch())
+					.onClick(() => this.runSearch(true))
 			)
 			.addButton((b) =>
 				b
@@ -103,14 +118,24 @@ export class CardSearchModal extends Modal {
 
 		this.resultsEl = contentEl.createDiv({ cls: "pokemon-collection-results" });
 		this.resultsEl.createEl("p", {
-			text: "Enter a card name (and optionally a number/set), then search.",
+			text: "Search by name, or jump straight to a card with its set code + number (e.g. DRI 062).",
 			cls: "pokemon-collection-hint",
 		});
 
 		// Auto-search when pre-filled (e.g. from a Cardmarket link).
-		if (this.nameValue || this.setValue) {
-			void this.runSearch();
+		if (this.nameValue || this.setValue || this.numberValue) {
+			void this.runSearch(true);
 		}
+	}
+
+	/** Submit a deep search when Enter is pressed in an input. */
+	private onEnter(input: HTMLInputElement): void {
+		input.addEventListener("keydown", (e) => {
+			if (e.key === "Enter") {
+				e.preventDefault();
+				void this.runSearch(true);
+			}
+		});
 	}
 
 	onClose(): void {
@@ -120,10 +145,21 @@ export class CardSearchModal extends Modal {
 
 	private scheduleSearch(): void {
 		if (this.searchTimer) window.clearTimeout(this.searchTimer);
-		this.searchTimer = window.setTimeout(() => this.runSearch(), 350);
+		this.searchTimer = window.setTimeout(() => this.runSearch(false), 350);
 	}
 
-	private async runSearch(): Promise<void> {
+	/**
+	 * Run a search. `deep` (Search button / Enter) allows network-heavy work
+	 * such as lazily building the set index to resolve an unknown set code.
+	 */
+	private async runSearch(deep: boolean): Promise<void> {
+		// Direct "set code + number" lookup (e.g. "DRI 062", "sv10-021").
+		const direct = this.parseDirect();
+		if (direct) {
+			await this.directLookup(direct.code, direct.num, deep);
+			return;
+		}
+
 		const name = this.nameValue.trim();
 		const number = this.numberValue.trim();
 		const set = this.setValue.trim();
@@ -131,12 +167,7 @@ export class CardSearchModal extends Modal {
 			return; // need at least a name or a set
 		}
 
-		this.resultsEl.empty();
-		this.resultsEl.createEl("p", {
-			text: "Searching…",
-			cls: "pokemon-collection-hint",
-		});
-
+		this.setHint("Searching…");
 		try {
 			const results = await this.plugin.api.searchCards(
 				{ name, number, set },
@@ -145,12 +176,76 @@ export class CardSearchModal extends Modal {
 			this.renderResults(results);
 		} catch (err) {
 			console.error("[pokemon-collection] search failed", err);
-			this.resultsEl.empty();
-			this.resultsEl.createEl("p", {
-				text: "Search failed. Check your connection.",
-				cls: "pokemon-collection-error",
-			});
+			this.setHint("Search failed. Check your connection.", true);
 		}
+	}
+
+	private setHint(text: string, error = false): void {
+		this.resultsEl.empty();
+		this.resultsEl.createEl("p", {
+			text,
+			cls: error
+				? "pokemon-collection-error"
+				: "pokemon-collection-hint",
+		});
+	}
+
+	/** Detect a "CODE NUMBER" / "setId-localId" direct lookup from the inputs. */
+	private parseDirect(): { code: string; num: string } | null {
+		const single = /^([A-Za-z][A-Za-z0-9.]{1,6})[\s-]+([A-Za-z]{0,3}\d{1,4}[A-Za-z]?)$/;
+		for (const raw of [this.numberValue, this.nameValue]) {
+			const m = raw.trim().match(single);
+			if (m) return { code: m[1], num: m[2] };
+		}
+		// Code-like Set field + a number field.
+		const set = this.setValue.trim();
+		const num = this.numberValue.trim();
+		if (
+			num &&
+			/^[A-Za-z0-9.]{2,10}$/.test(set) &&
+			/^[A-Za-z]{0,3}\d{1,4}[A-Za-z]?$/.test(num)
+		) {
+			return { code: set, num };
+		}
+		return null;
+	}
+
+	/** Resolve a set code + number to one card and open the variant selector. */
+	private async directLookup(
+		code: string,
+		num: string,
+		deep: boolean
+	): Promise<void> {
+		this.setHint(`Looking up ${code.toUpperCase()} ${num}…`);
+
+		let setId = this.plugin.setIndex.findSetIdByCode(code, this.lang);
+
+		// A lowercase/numeric token may be a raw set id — verify by fetching it.
+		if (!setId && /[a-z0-9]/.test(code) && code === code.toLowerCase()) {
+			const maybe = await this.plugin.api.getSet(code.toLowerCase(), this.lang);
+			if (maybe?.cards?.length) setId = maybe.id;
+		}
+		// Only the explicit Search/Enter path may build the index (network-heavy).
+		if (!setId && deep) {
+			setId = await this.plugin.setIndex.resolveCode(code, this.lang);
+		}
+
+		if (!setId) {
+			this.setHint(
+				deep
+					? `Set code "${code.toUpperCase()}" not recognized. Try "Rebuild Pokémon set index", or search by set name.`
+					: `Press Search to look up set code "${code.toUpperCase()}".`
+			);
+			return;
+		}
+
+		const set = await this.plugin.api.getSet(setId, this.lang);
+		const match = set?.cards?.find((c) => sameNumber(c.localId, num));
+		if (!match) {
+			this.setHint(`No card #${num} in ${set?.name ?? setId}.`);
+			return;
+		}
+		await this.pickCard(match);
 	}
 
 	/** Get the set's short code, caching the in-flight promise per set. */
