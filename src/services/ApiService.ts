@@ -7,8 +7,19 @@ import type {
 	TcgdexSetFull,
 } from "../types";
 import { cardmarketSearchUrl, cardmarketSingleUrl } from "../cardmarket";
+import type { SetIndexEntry } from "./SetIndexService";
 
 const BASE_URL = "https://api.tcgdex.net/v2";
+
+/** Options for the cached GET. */
+interface GetOptions {
+	/** Skip the fresh cache and hit the network. */
+	force?: boolean;
+	/** Freshness window override, in hours. */
+	ttlHours?: number;
+	/** Return null instead of stale cache on network failure. */
+	noStale?: boolean;
+}
 
 export interface CardSearchQuery {
 	name?: string;
@@ -45,6 +56,8 @@ export function sameNumber(localId: string | undefined, num: string): boolean {
  */
 export class ApiService {
 	private plugin: PokemonCollectionPlugin;
+	/** Set ids whose English layer is being fetched or has no English set. */
+	private enPending = new Set<string>();
 
 	constructor(plugin: PokemonCollectionPlugin) {
 		this.plugin = plugin;
@@ -211,20 +224,88 @@ export class ApiService {
 		return [...new Set(out)];
 	}
 
-	/** Full set details (includes the Cardmarket abbreviation). */
+	/**
+	 * Full set details (includes the Cardmarket abbreviation), recorded into
+	 * the set index. For a non-English set, the English layer is filled in the
+	 * background (once per set), since Cardmarket links need English names.
+	 */
 	async getSet(id: string, lang?: string): Promise<TcgdexSetFull | null> {
+		const l = lang || this.lang;
 		const path = `/sets/${encodeURIComponent(id)}`;
-		const set = await this.get<TcgdexSetFull>(path, lang);
-		if (set) this.plugin.setIndex?.noteFull(lang || this.lang, set);
+		const set = await this.get<TcgdexSetFull>(path, l);
+		if (set) {
+			this.plugin.setIndex?.noteFull(l, set);
+			if (l !== "en") this.fillEnglishLayer(set.id);
+		}
 		return set;
 	}
 
-	/** The full set list for a language, recorded into the set index. */
+	/** Fetch the English variant of a set into the index, if not known yet. */
+	private fillEnglishLayer(setId: string): void {
+		const index = this.plugin.setIndex;
+		if (!index || index.hasFull("en", setId) || this.enPending.has(setId)) {
+			return;
+		}
+		// Stays in the set when there is no English set (e.g. Japanese-only),
+		// so we don't retry it on every lookup this session.
+		this.enPending.add(setId);
+		void this.getSet(setId, "en")
+			.then((en) => {
+				if (en) this.enPending.delete(setId);
+			})
+			.catch(() => undefined);
+	}
+
+	/**
+	 * The full set list for a language, recorded into the set index. Uses its
+	 * own (shorter) TTL so newly released sets appear without a manual refresh.
+	 */
 	async getSets(lang?: string, force = false): Promise<TcgdexSetBrief[]> {
 		const list =
-			(await this.get<TcgdexSetBrief[]>("/sets", lang, force)) ?? [];
-		if (list.length) this.plugin.setIndex?.noteBriefs(lang || this.lang, list);
+			(await this.get<TcgdexSetBrief[]>("/sets", lang, {
+				force,
+				ttlHours: this.plugin.settings.setsListTtlHours,
+			})) ?? [];
+		if (list.length) {
+			const added = this.plugin.setIndex?.noteBriefs(lang || this.lang, list);
+			// A TTL-expired reload can surface new releases: announce them here
+			// too, since a later "Refresh Pokémon sets" would see them as known.
+			if (added?.length) this.plugin.setIndex.announceNew(lang || this.lang, added);
+		}
 		return list;
+	}
+
+	/**
+	 * Force a fresh /sets download; null when the network is unavailable (no
+	 * stale fallback, so callers can tell "offline" from "nothing new").
+	 */
+	async fetchSetsFresh(lang?: string): Promise<TcgdexSetBrief[] | null> {
+		const list = await this.get<TcgdexSetBrief[]>("/sets", lang, {
+			force: true,
+			noStale: true,
+		});
+		if (list?.length) this.plugin.setIndex?.noteBriefs(lang || this.lang, list);
+		return list;
+	}
+
+	// --- set index (local, works offline) -------------------------------------
+
+	/**
+	 * Map a set short code (e.g. "DRI", case-insensitive) to a set id using
+	 * the local index only: searches `lang`, then English.
+	 */
+	abbreviationToSetId(code: string, lang?: string): string | undefined {
+		return this.plugin.setIndex.findSetIdByCode(code, lang);
+	}
+
+	/** Every indexed set for a language (id, name, codes, card counts). */
+	getSetIndex(lang?: string): SetIndexEntry[] {
+		return this.plugin.setIndex.allSets(lang);
+	}
+
+	/** English set name for a set id (for Cardmarket links), if indexed. */
+	getSetNameEn(setId: string): string | undefined {
+		return this.plugin.setIndex.getNameEn(setId);
 	}
 
 	/** The set id embedded in a card id ("sv10-021" → "sv10"). */
@@ -314,12 +395,14 @@ export class ApiService {
 	private async get<T>(
 		path: string,
 		lang?: string,
-		force = false
+		opts: GetOptions = {}
 	): Promise<T | null> {
 		const l = lang || this.lang;
 		const cacheKey = `${l}${path}`;
-		if (!force) {
-			const fresh = this.plugin.cache.getFresh<T>(cacheKey);
+		const stale = (): T | null =>
+			opts.noStale ? null : this.plugin.cache.getStale<T>(cacheKey) ?? null;
+		if (!opts.force) {
+			const fresh = this.plugin.cache.getFresh<T>(cacheKey, opts.ttlHours);
 			if (fresh !== undefined) return fresh;
 		}
 
@@ -335,14 +418,14 @@ export class ApiService {
 				console.warn(
 					`[pokemon-collection] GET ${url} -> ${res.status}`
 				);
-				return this.plugin.cache.getStale<T>(cacheKey) ?? null;
+				return stale();
 			}
 			const data = res.json as T;
 			await this.plugin.cache.put(cacheKey, data);
 			return data;
 		} catch (err) {
 			console.error(`[pokemon-collection] network error for ${url}`, err);
-			return this.plugin.cache.getStale<T>(cacheKey) ?? null;
+			return stale();
 		}
 	}
 }

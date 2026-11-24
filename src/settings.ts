@@ -39,6 +39,8 @@ export interface PokemonCollectionSettings {
 	autoUpdateIntervalMinutes: number;
 	/** How long cached API responses stay fresh, in hours. */
 	cacheDurationHours: number;
+	/** How long the cached set list (/sets) stays fresh, in hours. */
+	setsListTtlHours: number;
 	/** Default quantity added per "Add Card" action. */
 	defaultQuantity: number;
 	/** Rendered image width in pixels (previews). */
@@ -63,6 +65,7 @@ export const DEFAULT_SETTINGS: PokemonCollectionSettings = {
 	priceProvider: "tcgdex-cardmarket",
 	autoUpdateIntervalMinutes: 0,
 	cacheDurationHours: 24,
+	setsListTtlHours: 6,
 	defaultQuantity: 1,
 	imageSize: 200,
 	enableImagePreviews: false,
@@ -224,6 +227,22 @@ export class PokemonCollectionSettingTab extends PluginSettingTab {
 						const n = Number.parseInt(value, 10);
 						this.plugin.settings.cacheDurationHours =
 							Number.isFinite(n) && n > 0 ? n : 24;
+						await this.plugin.saveSettings();
+					});
+			});
+
+		new Setting(containerEl)
+			.setName("Set list refresh (hours)")
+			.setDesc(
+				'How long the list of sets stays fresh, so new releases show up sooner. Run "Refresh Pokémon sets" to update it immediately.'
+			)
+			.addText((text) => {
+				text
+					.setValue(String(this.plugin.settings.setsListTtlHours))
+					.onChange(async (value) => {
+						const n = Number.parseFloat(value);
+						this.plugin.settings.setsListTtlHours =
+							Number.isFinite(n) && n > 0 ? n : 6;
 						await this.plugin.saveSettings();
 					});
 			});

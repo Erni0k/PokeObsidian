@@ -49,12 +49,16 @@ export class CacheService {
 
 	// --- API response cache (TTL) ------------------------------------------
 
-	/** Returns cached data for `key` if still fresh, else undefined. */
-	getFresh<T>(key: string): T | undefined {
+	/**
+	 * Returns cached data for `key` if still fresh, else undefined. `ttlHours`
+	 * overrides the global cache duration (e.g. a shorter TTL for /sets).
+	 */
+	getFresh<T>(key: string, ttlHours?: number): T | undefined {
 		const rec = this.apiCache.entries[key];
 		if (!rec) return undefined;
 		const ageMs = Date.now() - new Date(rec.fetchedAt).getTime();
-		const ttlMs = this.plugin.settings.cacheDurationHours * 3600 * 1000;
+		const hours = ttlHours ?? this.plugin.settings.cacheDurationHours;
+		const ttlMs = hours * 3600 * 1000;
 		if (ageMs > ttlMs) return undefined;
 		return rec.data as T;
 	}

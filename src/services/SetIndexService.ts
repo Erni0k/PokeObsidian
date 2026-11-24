@@ -15,6 +15,8 @@ export interface SetIndexEntry {
 	abbreviationLocalized?: string;
 	/** True once recorded from a full set (both codes are known). */
 	full?: boolean;
+	/** True once seen in a /sets list (baseline for "new set" detection). */
+	listed?: boolean;
 	total?: number;
 	official?: number;
 }
@@ -55,9 +57,14 @@ export class SetIndexService {
 		return this.index[lang];
 	}
 
-	/** Record set briefs (names + counts, no abbreviation) from a /sets list. */
-	noteBriefs(lang: string, briefs: TcgdexSetBrief[]): void {
+	/**
+	 * Record set briefs (names + counts, no abbreviation) from a /sets list.
+	 * Returns the sets that were not indexed before (empty on the first list
+	 * for a language, when there is nothing to compare against).
+	 */
+	noteBriefs(lang: string, briefs: TcgdexSetBrief[]): TcgdexSetBrief[] {
 		const m = this.map(this.lang(lang));
+		const added = this.hasList(lang) ? briefs.filter((b) => !m[b.id]) : [];
 		for (const b of briefs) {
 			const prev = m[b.id];
 			m[b.id] = {
@@ -66,11 +73,24 @@ export class SetIndexService {
 				abbreviation: prev?.abbreviation,
 				abbreviationLocalized: prev?.abbreviationLocalized,
 				full: prev?.full,
+				listed: true,
 				total: b.cardCount?.total ?? prev?.total,
 				official: b.cardCount?.official ?? prev?.official,
 			};
 		}
 		this.scheduleSave();
+		return added;
+	}
+
+	/** Show a "New sets: …" notice for newly discovered sets. */
+	announceNew(lang: string, added: TcgdexSetBrief[]): void {
+		new Notice(this.newSetsMessage(lang, added), 10000);
+	}
+
+	private newSetsMessage(lang: string, added: TcgdexSetBrief[]): string {
+		const names = added.map((b) => b.name).slice(0, 5).join(", ");
+		const more = added.length > 5 ? ` and ${added.length - 5} more` : "";
+		return `New Pokémon sets (${this.lang(lang).toUpperCase()}): ${names}${more}`;
 	}
 
 	/** Record a full set (adds the abbreviation). */
@@ -82,6 +102,7 @@ export class SetIndexService {
 			abbreviation: set.abbreviation?.official?.toUpperCase(),
 			abbreviationLocalized: set.abbreviation?.localized?.toUpperCase(),
 			full: true,
+			listed: m[set.id]?.listed,
 			total: set.cardCount?.total ?? m[set.id]?.total,
 			official: set.cardCount?.official ?? m[set.id]?.official,
 		};
@@ -105,6 +126,17 @@ export class SetIndexService {
 			if (hit) return hit.id;
 		}
 		return undefined;
+	}
+
+	/** Whether a /sets list was recorded for a language (to diff against). */
+	hasList(lang?: string): boolean {
+		const m = this.index[this.lang(lang)];
+		return !!m && Object.values(m).some((e) => e.listed);
+	}
+
+	/** Whether a set was recorded from its full details in a language. */
+	hasFull(lang: string, setId: string): boolean {
+		return !!this.index[lang]?.[setId]?.full;
 	}
 
 	/** English set name for a set id (for Cardmarket links). */
@@ -150,27 +182,41 @@ export class SetIndexService {
 
 	// --- bulk operations ----------------------------------------------------
 
-	/** Fully (re)build the index for the given languages. */
+	/**
+	 * Build the index for the given languages (English always included, first,
+	 * so the non-English pass doesn't trigger extra background EN fetches):
+	 * refreshes /sets, then fetches /sets/{id} only for sets whose codes are
+	 * not known yet. Progress is shown in a Notice.
+	 */
 	async rebuild(langs: string[]): Promise<void> {
-		const unique = [...new Set(langs.filter(Boolean))];
+		const unique = [...new Set(["en", ...langs.filter(Boolean)])];
 		const notice = new Notice("Building Pokémon set index…", 0);
+		let failed = 0;
 		try {
 			for (const l of unique) {
-				const briefs = await this.plugin.api.getSets(l);
+				const briefs =
+					(await this.plugin.api.fetchSetsFresh(l)) ??
+					(await this.plugin.api.getSets(l)); // offline: stale list
+				const missing = briefs.filter((b) => !this.hasFull(l, b.id));
 				let done = 0;
-				for (const b of briefs) {
-					await this.plugin.api.getSet(b.id, l); // records full set
+				for (const b of missing) {
+					const set = await this.plugin.api.getSet(b.id, l); // records codes
+					if (!set) failed++;
 					done++;
-					if (done % 25 === 0) {
+					if (done % 10 === 0 || done === missing.length) {
 						notice.setMessage(
-							`Building set index (${l}): ${done}/${briefs.length}…`
+							`Building set index (${l.toUpperCase()}): ${done}/${missing.length}…`
 						);
 					}
 				}
 			}
 			await this.flush();
 			notice.hide();
-			new Notice("Pokémon set index built.");
+			new Notice(
+				failed
+					? `Pokémon set index built (${failed} set(s) could not be loaded — try again online).`
+					: "Pokémon set index built."
+			);
 		} catch (err) {
 			notice.hide();
 			console.error("[pokemon-collection] set index build failed", err);
@@ -179,26 +225,52 @@ export class SetIndexService {
 	}
 
 	/**
-	 * Force-refresh the set list and report newly added sets (compared to what
-	 * the index already knows for that language).
+	 * Force-refresh the set list (for `lang` and English) and report sets that
+	 * the index didn't know yet. New sets are fetched in full right away so
+	 * their short codes resolve immediately.
 	 */
 	async refreshSets(lang?: string): Promise<void> {
-		const l = this.lang(lang);
-		const known = new Set(Object.keys(this.index[l] ?? {}));
-		const briefs = await this.plugin.api.getSets(l, true);
-		const fresh = briefs.filter((b) => !known.has(b.id));
-		await this.flush();
-
-		if (fresh.length === 0) {
-			new Notice("Pokémon sets are up to date.");
-			return;
+		const langs = [...new Set([this.lang(lang), "en"])];
+		const notice = new Notice("Refreshing Pokémon sets…", 0);
+		const report: string[] = [];
+		let offline = false;
+		let firstRun = false;
+		try {
+			for (const l of langs) {
+				const hadList = this.hasList(l);
+				const known = new Set(Object.keys(this.index[l] ?? {}));
+				const briefs = await this.plugin.api.fetchSetsFresh(l);
+				if (!briefs) {
+					offline = true;
+					continue;
+				}
+				if (!hadList) {
+					firstRun = true; // nothing to compare against yet
+					continue;
+				}
+				const fresh = briefs.filter((b) => !known.has(b.id));
+				for (const b of fresh) await this.plugin.api.getSet(b.id, l);
+				// One line is enough: EN usually repeats the same releases.
+				if (fresh.length && !report.length) {
+					report.push(this.newSetsMessage(l, fresh));
+				}
+			}
+			await this.flush();
+		} finally {
+			notice.hide();
 		}
-		const names = fresh.map((b) => b.name).slice(0, 5).join(", ");
-		new Notice(
-			`${fresh.length} new set(s): ${names}${
-				fresh.length > 5 ? "…" : ""
-			}`
-		);
+
+		if (offline) {
+			new Notice("Could not refresh Pokémon sets — you seem to be offline.");
+		} else if (report.length) {
+			new Notice(report.join("\n"), 10000);
+		} else if (firstRun) {
+			new Notice(
+				'Pokémon set list downloaded. Run "Rebuild Pokémon set index" to index all set codes.'
+			);
+		} else {
+			new Notice("Pokémon sets are up to date.");
+		}
 	}
 
 	// --- file IO ------------------------------------------------------------
