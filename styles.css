@@ -189,3 +189,15 @@ th.pokemon-sortable:hover {
 	resize: vertical;
 	margin-bottom: 0.5rem;
 }
+
+/* Continuous add mode: running "Added N" counter in the search modal. */
+.pokemon-collection-added {
+	margin: -0.25em 0 0.75em;
+	padding: 0.35em 0.6em;
+	border-radius: var(--radius-s);
+	background: var(--background-modifier-success);
+	font-size: var(--font-ui-small);
+}
+.pokemon-collection-added-count {
+	font-weight: var(--font-semibold);
+}

@@ -25,8 +25,10 @@ interface DirectQuery {
 
 /**
  * "Add Card" step 1: search TCGdex by name / number / set and pick a card.
- * Selecting a result opens the {@link VariantSelectorModal}. An optional
- * initial query pre-fills the fields (e.g. parsed from a Cardmarket link).
+ * Selecting a result opens the {@link VariantSelectorModal}. After a card is
+ * added the modal stays open (continuous mode): name/number are cleared, the
+ * set + language are kept, and a running "Added N" counter is shown. An
+ * optional initial query pre-fills the fields (e.g. from a Cardmarket link).
  */
 export class CardSearchModal extends Modal {
 	private plugin: PokemonCollectionPlugin;
@@ -38,7 +40,15 @@ export class CardSearchModal extends Modal {
 	/** Exact set id chosen from autocomplete (overrides the free-text set). */
 	private pickedSetId: string | undefined;
 	private setInput?: TextComponent;
+	private nameInput?: TextComponent;
+	private numberInput?: TextComponent;
+	/** The name/number input used last, refocused after each add. */
+	private lastQueryInput?: HTMLInputElement;
 	private setSuggest?: SetSuggest;
+	/** Continuous mode: cards added in this session of the modal. */
+	private addedCount = 0;
+	private addedNames: string[] = [];
+	private counterEl!: HTMLElement;
 	private lang: string;
 	private resultsEl!: HTMLElement;
 	private searchTimer: number | null = null;
@@ -66,10 +76,14 @@ export class CardSearchModal extends Modal {
 		contentEl.empty();
 		contentEl.addClass("pokemon-collection-modal");
 		contentEl.createEl("h2", { text: "Add Pokémon card" });
+		this.counterEl = contentEl.createDiv({ cls: "pokemon-collection-added" });
+		this.counterEl.hide();
 
 		new Setting(contentEl)
 			.setName("Card name")
 			.addText((t) => {
+				this.nameInput = t;
+				this.trackFocus(t.inputEl);
 				t.setPlaceholder("Pikachu")
 					.setValue(this.nameValue)
 					.onChange((v) => {
@@ -84,6 +98,8 @@ export class CardSearchModal extends Modal {
 			.setName("Card number")
 			.setDesc("Tip: type a set code + number here, e.g. \"DRI 062\".")
 			.addText((t) => {
+				this.numberInput = t;
+				this.trackFocus(t.inputEl);
 				t.setPlaceholder("58  ·  DRI 062  ·  sv10-021")
 					.setValue(this.numberValue)
 					.onChange((v) => {
@@ -138,7 +154,8 @@ export class CardSearchModal extends Modal {
 				b
 					.setButtonText("Add manually")
 					.onClick(() => this.addManually())
-			);
+			)
+			.addButton((b) => b.setButtonText("Done").onClick(() => this.close()));
 
 		this.resultsEl = contentEl.createDiv({ cls: "pokemon-collection-results" });
 		this.resultsEl.createEl("p", {
@@ -409,13 +426,59 @@ export class CardSearchModal extends Modal {
 		}
 	}
 
+	private trackFocus(input: HTMLInputElement): void {
+		input.addEventListener("focus", () => (this.lastQueryInput = input));
+	}
+
+	/**
+	 * A card was confirmed: hand it to the caller, then reset for the next one
+	 * instead of closing (continuous mode).
+	 */
+	private onAdded(entry: CollectionEntry, addQty: number): void {
+		this.onConfirm(entry, addQty);
+		this.addedCount += addQty;
+		this.addedNames.push(entry.name);
+		this.renderCounter();
+
+		// Cancel any pending/in-flight search and clear the query fields.
+		if (this.searchTimer) window.clearTimeout(this.searchTimer);
+		this.searchTimer = null;
+		this.searchSeq++;
+		this.nameValue = "";
+		this.numberValue = "";
+		this.nameInput?.setValue("");
+		this.numberInput?.setValue("");
+
+		const set = this.pickedSetId ? this.setValue : "";
+		this.setHint(
+			set
+				? `Added ${entry.name}. Next card — type a number in ${set}, or a set code + number.`
+				: `Added ${entry.name}. Search for the next card.`
+		);
+		// Refocus after the variant modal has finished closing.
+		const target = this.lastQueryInput ?? this.nameInput?.inputEl;
+		window.setTimeout(() => target?.focus(), 50);
+	}
+
+	private renderCounter(): void {
+		this.counterEl.empty();
+		this.counterEl.show();
+		this.counterEl.createSpan({
+			text: `Added ${this.addedCount} card${this.addedCount === 1 ? "" : "s"}`,
+			cls: "pokemon-collection-added-count",
+		});
+		const recent = this.addedNames.slice(-3).reverse().join(", ");
+		const more = this.addedNames.length > 3 ? ", …" : "";
+		this.counterEl.createSpan({
+			text: ` · last: ${recent}${more}`,
+			cls: "pokemon-collection-result-meta",
+		});
+	}
+
 	private addManually(): void {
 		new ManualAddModal(
 			this.plugin,
-			(entry, addQty) => {
-				this.close();
-				this.onConfirm(entry, addQty);
-			},
+			(entry, addQty) => this.onAdded(entry, addQty),
 			{
 				name: this.nameValue,
 				number: this.numberValue,
@@ -437,10 +500,7 @@ export class CardSearchModal extends Modal {
 			new VariantSelectorModal(
 				this.plugin,
 				full,
-				(entry, addQty) => {
-					this.close();
-					this.onConfirm(entry, addQty);
-				},
+				(entry, addQty) => this.onAdded(entry, addQty),
 				this.lang
 			).open();
 		} catch (err) {

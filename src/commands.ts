@@ -11,6 +11,8 @@ import type { CardSearchQuery } from "./services/ApiService";
 /** Registers all plugin commands and holds their implementations. */
 export class CommandController {
 	private plugin: PokemonCollectionPlugin;
+	/** Serializes note writes so rapid adds (continuous / bulk) never interleave. */
+	private writeQueue: Promise<void> = Promise.resolve();
 
 	constructor(plugin: PokemonCollectionPlugin) {
 		this.plugin = plugin;
@@ -187,9 +189,20 @@ export class CommandController {
 		).open();
 	}
 
+	/** Run a note write after any write already in progress. */
+	private enqueueWrite(task: () => Promise<void>): Promise<void> {
+		const next = this.writeQueue.then(task, task);
+		this.writeQueue = next.catch(() => undefined);
+		return next;
+	}
+
 	/** Insert many resolved cards into `file` in a single read/modify/write. */
-	private async insertEntries(file: TFile, items: BulkItem[]): Promise<void> {
-		if (!items.length) return;
+	private insertEntries(file: TFile, items: BulkItem[]): Promise<void> {
+		if (!items.length) return Promise.resolve();
+		return this.enqueueWrite(() => this.writeEntries(file, items));
+	}
+
+	private async writeEntries(file: TFile, items: BulkItem[]): Promise<void> {
 		try {
 			const apply = (content: string): string => {
 				let c = content;
@@ -239,7 +252,15 @@ export class CommandController {
 	 * an editing mode (preserves cursor + unsaved buffer); otherwise (e.g.
 	 * Reading view) writes the file on disk so it works in every mode.
 	 */
-	private async insertEntry(
+	private insertEntry(
+		file: TFile,
+		entry: CollectionEntry,
+		addQty: number
+	): Promise<void> {
+		return this.enqueueWrite(() => this.writeEntry(file, entry, addQty));
+	}
+
+	private async writeEntry(
 		file: TFile,
 		entry: CollectionEntry,
 		addQty: number
