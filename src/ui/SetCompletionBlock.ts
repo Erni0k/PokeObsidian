@@ -176,7 +176,8 @@ export class SetCompletionBlock extends MarkdownRenderChild {
 
 	private async renderSnapshot(snapshot: SetSnapshot): Promise<void> {
 		const langs = this.ownedLanguages();
-		const owned = (await this.plugin.collection.scan()).filter(
+		// Only cards you own: wishlist/trade lists don't fill slots.
+		const owned = (await this.plugin.collection.scan(["collection"])).filter(
 			(c) => !langs || langs.includes(c.language.trim().toLowerCase())
 		);
 		const result = this.plugin.setCompletion.compute(snapshot, owned);

@@ -3,6 +3,7 @@ import type PokemonCollectionPlugin from "../main";
 import type {
 	AggregatedCard,
 	CollectionStats,
+	ListTotals,
 } from "../services/CollectionService";
 import { lineChart, pieChart } from "./charts";
 import { CardHistoryModal, currencySymbol, formatMove } from "./CardHistory";
@@ -21,10 +22,15 @@ export async function renderDashboard(
 	root.empty();
 	root.addClass("pokemon-collection-dashboard");
 
-	const cards = await plugin.collection.scan();
+	const all = await plugin.collection.scan();
+	// Value and statistics count only cards you own; wishlist and trade
+	// lists get their own tiles.
+	const cards = all.filter((c) => c.list === "collection");
+	const wishlist = plugin.collection.totals(all.filter((c) => c.list === "wishlist"));
+	const trade = plugin.collection.totals(all.filter((c) => c.list === "trade"));
 	const stats = plugin.collection.computeStats(cards);
 
-	if (cards.length === 0) {
+	if (all.length === 0) {
 		root.createEl("p", {
 			cls: "pokemon-collection-hint",
 			text:
@@ -33,15 +39,21 @@ export async function renderDashboard(
 		return charts;
 	}
 
-	renderStats(root, stats);
-	renderCharts(plugin, root, cards, charts);
+	renderStats(root, stats, wishlist, trade);
+	if (cards.length) renderCharts(plugin, root, cards, charts);
 	return charts;
 }
 
-function renderStats(root: HTMLElement, stats: CollectionStats): void {
+function renderStats(
+	root: HTMLElement,
+	stats: CollectionStats,
+	wishlist: ListTotals,
+	trade: ListTotals
+): void {
 	const grid = root.createDiv({ cls: "pokemon-collection-stats" });
 	const cur = stats.currency === "EUR" ? "€" : "";
 	const money = (n: number) => `${cur}${n.toFixed(2)}`;
+	const cardsWord = (n: number): string => `${n} card${n === 1 ? "" : "s"}`;
 
 	const items: Array<[string, string]> = [
 		["Total cards", String(stats.totalCards)],
@@ -64,6 +76,12 @@ function renderStats(root: HTMLElement, stats: CollectionStats): void {
 		],
 		["Sets owned", String(stats.setsOwned)],
 	];
+	if (wishlist.unique) {
+		items.push(["Wishlist", `${cardsWord(wishlist.cards)} · cost ${money(wishlist.value)}`]);
+	}
+	if (trade.unique) {
+		items.push(["Trade", `${cardsWord(trade.cards)} · value ${money(trade.value)}`]);
+	}
 
 	for (const [label, value] of items) {
 		const cell = grid.createDiv({ cls: "pokemon-collection-stat" });

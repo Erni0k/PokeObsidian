@@ -7,6 +7,13 @@ import { AddByLinkModal } from "./ui/AddByLinkModal";
 import { ManualAddModal } from "./ui/ManualAddModal";
 import { BulkAddModal, BulkItem } from "./ui/BulkAddModal";
 import { SetChoice, SetCompletionModal } from "./ui/SetCompletionModal";
+import {
+	CreateListNoteModal,
+	defaultListName,
+	NotePickerModal,
+	TradeCandidatesModal,
+} from "./ui/ListModals";
+import type { ListType, TradeCandidate } from "./services/CollectionService";
 import type { CardSearchQuery } from "./services/ApiService";
 
 /** Registers all plugin commands and holds their implementations. */
@@ -75,6 +82,31 @@ export class CommandController {
 			name: "Show set completion",
 			callback: () =>
 				new SetCompletionModal(plugin, (c) => void this.createSetNote(c)).open(),
+		});
+
+		plugin.addCommand({
+			id: "move-card-to-collection",
+			name: "Move card to collection",
+			editorCallback: (editor, ctx) => {
+				if (ctx.file) void this.moveToCollection(editor, ctx.file);
+			},
+		});
+
+		plugin.addCommand({
+			id: "find-trade-candidates",
+			name: "Find trade candidates",
+			callback: () => void this.findTradeCandidates(),
+		});
+
+		plugin.addCommand({
+			id: "create-list-note",
+			name: "Create wishlist / trade note",
+			callback: () =>
+				new CreateListNoteModal(plugin.app, (type, name) => {
+					void this.createListNote(type, name).then((file) => {
+						if (file) void plugin.app.workspace.getLeaf(true).openFile(file);
+					});
+				}).open(),
 		});
 
 		plugin.addCommand({
@@ -198,6 +230,151 @@ export class CommandController {
 		if (file instanceof TFile) {
 			await this.plugin.app.workspace.getLeaf(true).openFile(file);
 		}
+	}
+
+	// --- Wishlist / trade lists ----------------------------------------------
+
+	/**
+	 * Rewrite a note's content: through the live editor when the note is open
+	 * in an editing mode (keeps the cursor and unsaved buffer), else on disk.
+	 */
+	private async modifyNote(file: TFile, fn: (content: string) => string): Promise<void> {
+		const view = this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
+		const editor =
+			view && view.file === file && view.getMode() === "source" ? view.editor : null;
+		if (editor) {
+			const before = editor.getValue();
+			const after = fn(before);
+			if (after !== before) this.setEditorValue(editor, after);
+		} else {
+			await this.plugin.app.vault.process(file, fn);
+		}
+	}
+
+	/** Move the wishlist row under the cursor into a picked collection note. */
+	private async moveToCollection(editor: Editor, file: TFile): Promise<void> {
+		const md = this.plugin.markdown;
+		const collection = this.plugin.collection;
+		if (collection.listTypeOf(file) !== "wishlist") {
+			new Notice('Use this in a wishlist note (frontmatter "pokemon-list: wishlist").');
+			return;
+		}
+		const key = md.keyFromRow(editor.getLine(editor.getCursor().line));
+		const entry = key ? md.parseEntries(editor.getValue()).find((e) => e.key === key) : undefined;
+		if (!key || !entry) {
+			new Notice("Place the cursor on a card row in the wishlist table.");
+			return;
+		}
+
+		const targets = (await collection.scanNotes(["collection"]))
+			.map((n) => n.file)
+			.filter((f) => f.path !== file.path);
+		if (!targets.length) {
+			new Notice("No collection notes with a card table found in the collection folder.");
+			return;
+		}
+
+		new NotePickerModal(
+			this.plugin.app,
+			targets,
+			`Move ${entry.name} (${entry.variant}) to which collection note?`,
+			(target) =>
+				void this.enqueueWrite(async () => {
+					const qty = Math.max(1, entry.quantity);
+					try {
+						// Add first (merges into an existing row with the same
+						// id:variant key), then remove from the wishlist.
+						await this.modifyNote(target, (c) => this.withEntry(c, entry, qty));
+						await this.modifyNote(file, (c) => {
+							const rest = md.parseEntries(c).filter((e) => e.key !== key);
+							return md.replaceSection(c, rest) ?? c;
+						});
+						new Notice(`Moved ${entry.name} (${entry.variant}) ×${qty} to ${target.basename}.`);
+					} catch (err) {
+						console.error("[pokemon-collection] move failed", err);
+						new Notice(
+							`Could not move the card: ${err instanceof Error ? err.message : String(err)}`
+						);
+					}
+				})
+		).open();
+	}
+
+	/** Show collection cards with Qty > 1 and offer to write them to a trade note. */
+	private async findTradeCandidates(): Promise<void> {
+		const candidates = await this.plugin.collection.tradeCandidates();
+		if (!candidates.length) {
+			new Notice("No duplicates: every collection card has Qty 1.");
+			return;
+		}
+		new TradeCandidatesModal(this.plugin, candidates, () =>
+			void this.pickTradeNote(candidates)
+		).open();
+	}
+
+	private async pickTradeNote(candidates: TradeCandidate[]): Promise<void> {
+		const collection = this.plugin.collection;
+		const notes = collection
+			.getCandidateFiles()
+			.filter((f) => collection.listTypeOf(f) === "trade");
+		if (!notes.length) {
+			const file = await this.createListNote("trade", defaultListName("trade"));
+			if (file) await this.writeTradeNote(file, candidates);
+			return;
+		}
+		if (notes.length === 1) {
+			await this.writeTradeNote(notes[0], candidates);
+			return;
+		}
+		new NotePickerModal(this.plugin.app, notes, "Add spare copies to which trade note?", (f) =>
+			void this.writeTradeNote(f, candidates)
+		).open();
+	}
+
+	/** Upsert candidates into a trade note with Qty = spare copies (idempotent). */
+	private writeTradeNote(file: TFile, candidates: TradeCandidate[]): Promise<void> {
+		const md = this.plugin.markdown;
+		return this.enqueueWrite(async () => {
+			await this.modifyNote(file, (content) => {
+				const entries = md.parseEntries(content);
+				for (const c of candidates) {
+					const price = c.unitPrice || c.entry.price;
+					const i = entries.findIndex((e) => e.key === c.entry.key);
+					if (i >= 0) entries[i] = { ...entries[i], quantity: c.surplus, price: price ?? entries[i].price };
+					else entries.push({ ...c.entry, quantity: c.surplus, price });
+				}
+				const sorted = this.maybeAutoSort(entries);
+				if (md.hasSection(content)) return md.replaceSection(content, sorted) ?? content;
+				const sep = content.endsWith("\n") ? "\n" : "\n\n";
+				return `${content}${sep}${md.renderSection(sorted)}\n`;
+			});
+			new Notice(`Wrote ${candidates.length} trade candidate(s) to ${file.basename}.`);
+			await this.plugin.app.workspace.getLeaf(false).openFile(file);
+		});
+	}
+
+	/** Create a list note with frontmatter and an empty table (or return the existing one). */
+	private async createListNote(type: ListType, name: string): Promise<TFile | null> {
+		const vault = this.plugin.app.vault;
+		const folder = this.plugin.settings.collectionFolder.trim();
+		const safe = name.replace(/[\\/:*?"<>|#^[\]]/g, " ").replace(/\s+/g, " ").trim();
+		if (!safe) return null;
+		const path = `${folder ? `${folder}/` : ""}${safe}.md`;
+
+		const existing = vault.getAbstractFileByPath(path);
+		if (existing instanceof TFile) {
+			new Notice(`${safe} already exists — opening it.`);
+			return existing;
+		}
+		if (folder && !vault.getAbstractFileByPath(folder)) {
+			try {
+				await vault.createFolder(folder);
+			} catch {
+				/* may already exist */
+			}
+		}
+		const content = `---\npokemon-list: ${type}\n---\n\n# ${safe}\n\n${this.plugin.markdown.renderSection([])}\n`;
+		return vault.create(path, content);
 	}
 
 	// --- Add card -----------------------------------------------------------
@@ -476,6 +653,9 @@ export class CommandController {
 			if (newContent && newContent !== note.content) {
 				await this.plugin.app.vault.modify(note.file, newContent);
 			}
+			// Prices of every list are refreshed (wishlist cost needs them),
+			// but the portfolio value counts only what you own.
+			if (this.plugin.collection.listTypeOf(note.file) !== "collection") continue;
 			for (const e of updated) {
 				totalValue += e.quantity * (e.price ?? 0);
 				totalCards += e.quantity;
@@ -493,7 +673,7 @@ export class CommandController {
 
 		notice.hide();
 		new Notice(
-			`Updated ${uniq.size} cards. Collection value: €${totalValue.toFixed(
+			`Updated ${allKeys.size} cards. Collection value: €${totalValue.toFixed(
 				2
 			)}.`
 		);

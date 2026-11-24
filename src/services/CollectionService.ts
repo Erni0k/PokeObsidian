@@ -1,8 +1,16 @@
 import { TFile } from "obsidian";
 import type PokemonCollectionPlugin from "../main";
-import type { CardKey } from "../types";
+import type { CardKey, CollectionEntry } from "../types";
 
-/** One card aggregated across every collection note in scope. */
+/**
+ * What a note's table means, from its frontmatter `pokemon-list:`.
+ * Missing / unknown = "collection" (cards you own).
+ */
+export type ListType = "collection" | "wishlist" | "trade";
+
+export const LIST_TYPES: ListType[] = ["collection", "wishlist", "trade"];
+
+/** One card aggregated across every note of the same list type in scope. */
 export interface AggregatedCard {
 	key: CardKey;
 	id: string;
@@ -13,11 +21,20 @@ export interface AggregatedCard {
 	quantity: number;
 	unitPrice: number;
 	rarity: string;
+	/** Which kind of list the card was found in. */
+	list: ListType;
 	dateAdded?: string;
 	/** Base image URL from the meta cache (without quality/extension). */
 	image?: string;
 	/** Vault paths of the notes this card appears in. */
 	notePaths: string[];
+}
+
+/** The parsed table of one note in scope. */
+export interface NoteEntries {
+	file: TFile;
+	list: ListType;
+	entries: CollectionEntry[];
 }
 
 export interface CollectionStats {
@@ -31,10 +48,30 @@ export interface CollectionStats {
 	currency: string;
 }
 
+/** Count + value of a list (Σ qty, Σ qty × price). */
+export interface ListTotals {
+	cards: number;
+	unique: number;
+	value: number;
+}
+
+/** A collection card owned more than once: the copies beyond one can be traded. */
+export interface TradeCandidate {
+	/** A representative row (variant, lang, number, price) for the card. */
+	entry: CollectionEntry;
+	owned: number;
+	surplus: number;
+	unitPrice: number;
+	/** surplus × unitPrice. */
+	value: number;
+	image?: string;
+	notePaths: string[];
+}
+
 /**
  * Scans the configured collection folder (or the whole vault when blank),
- * reads each note's Markdown table, and aggregates owned cards. This is the
- * bridge between "Markdown = truth" and the dashboard / price snapshots.
+ * reads each note's Markdown table, and aggregates cards per list type. This
+ * is the bridge between "Markdown = truth" and the dashboard / price snapshots.
  */
 export class CollectionService {
 	private plugin: PokemonCollectionPlugin;
@@ -52,6 +89,14 @@ export class CollectionService {
 		return all.filter((f) => f.path === folder || f.path.startsWith(prefix));
 	}
 
+	/** List type of a note from its frontmatter (default "collection"). */
+	listTypeOf(file: TFile): ListType {
+		const fm = this.plugin.app.metadataCache.getFileCache(file)?.frontmatter;
+		const raw = fm?.["pokemon-list"];
+		const v = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+		return (LIST_TYPES as string[]).includes(v) ? (v as ListType) : "collection";
+	}
+
 	/** Files that actually contain a collection section. */
 	async getCollectionFiles(): Promise<TFile[]> {
 		const files: TFile[] = [];
@@ -62,19 +107,32 @@ export class CollectionService {
 		return files;
 	}
 
-	/** Aggregate all owned cards across the collection scope. */
-	async scan(): Promise<AggregatedCard[]> {
-		const byKey = new Map<CardKey, AggregatedCard>();
-
+	/** Notes with a table in scope, optionally only of the given list types. */
+	async scanNotes(lists?: ListType[]): Promise<NoteEntries[]> {
+		const out: NoteEntries[] = [];
 		for (const file of this.getCandidateFiles()) {
+			const list = this.listTypeOf(file);
+			if (lists && !lists.includes(list)) continue;
 			const content = await this.plugin.app.vault.cachedRead(file);
 			if (!this.plugin.markdown.hasSection(content)) continue;
-			const entries = this.plugin.markdown.parseEntries(content);
+			out.push({ file, list, entries: this.plugin.markdown.parseEntries(content) });
+		}
+		return out;
+	}
 
+	/**
+	 * Aggregate cards across the scope, one item per (list type, key): the
+	 * same card in a collection and a wishlist stays two separate items.
+	 */
+	async scan(lists?: ListType[]): Promise<AggregatedCard[]> {
+		const byKey = new Map<string, AggregatedCard>();
+
+		for (const { file, list, entries } of await this.scanNotes(lists)) {
 			for (const e of entries) {
 				const meta = this.plugin.cache.getMeta(e.key);
 				const unit = e.price ?? meta?.marketPrice ?? 0;
-				const existing = byKey.get(e.key);
+				const agg = `${list}\u0000${e.key}`;
+				const existing = byKey.get(agg);
 				if (existing) {
 					existing.quantity += e.quantity;
 					// Prefer a non-zero price if we have one.
@@ -83,7 +141,7 @@ export class CollectionService {
 						existing.notePaths.push(file.path);
 					}
 				} else {
-					byKey.set(e.key, {
+					byKey.set(agg, {
 						key: e.key,
 						id: e.id,
 						name: e.name,
@@ -93,6 +151,7 @@ export class CollectionService {
 						quantity: e.quantity,
 						unitPrice: unit,
 						rarity: meta?.rarity ?? "Unknown",
+						list,
 						dateAdded: meta?.dateAdded,
 						image: meta?.image,
 						notePaths: [file.path],
@@ -102,6 +161,51 @@ export class CollectionService {
 		}
 
 		return Array.from(byKey.values());
+	}
+
+	/** Collection cards with Qty > 1 (summed across collection notes). */
+	async tradeCandidates(): Promise<TradeCandidate[]> {
+		const byKey = new Map<CardKey, TradeCandidate>();
+		for (const { file, entries } of await this.scanNotes(["collection"])) {
+			for (const e of entries) {
+				const meta = this.plugin.cache.getMeta(e.key);
+				const unit = e.price ?? meta?.marketPrice ?? 0;
+				const c = byKey.get(e.key);
+				if (c) {
+					c.owned += e.quantity;
+					if (!c.unitPrice && unit) c.unitPrice = unit;
+					if (!c.notePaths.includes(file.path)) c.notePaths.push(file.path);
+				} else {
+					byKey.set(e.key, {
+						entry: e,
+						owned: e.quantity,
+						surplus: 0,
+						unitPrice: unit,
+						value: 0,
+						image: meta?.image,
+						notePaths: [file.path],
+					});
+				}
+			}
+		}
+		const out: TradeCandidate[] = [];
+		for (const c of byKey.values()) {
+			if (c.owned <= 1) continue;
+			c.surplus = c.owned - 1;
+			c.value = c.surplus * c.unitPrice;
+			out.push(c);
+		}
+		return out.sort((a, b) => b.value - a.value);
+	}
+
+	totals(cards: AggregatedCard[]): ListTotals {
+		let count = 0;
+		let value = 0;
+		for (const c of cards) {
+			count += c.quantity;
+			value += c.quantity * c.unitPrice;
+		}
+		return { cards: count, unique: cards.length, value };
 	}
 
 	computeStats(cards: AggregatedCard[]): CollectionStats {
