@@ -61,6 +61,8 @@ export interface CollectionEntry {
 /** Cached metadata for a card that is not stored in the Markdown table. */
 export interface CachedCardMeta {
 	id: string;
+	/** TCGdex language the card was fetched in (ids are per language). */
+	lang?: string;
 	name: string;
 	setName: string;
 	setCode: string;
@@ -142,6 +144,8 @@ export interface TcgdexCardFull {
 	image?: string;
 	category?: string;
 	rarity?: string;
+	/** National Pokédex number(s) of the Pokémon on the card (none for trainers). */
+	dexId?: number[];
 	set?: TcgdexSetRef;
 	variants?: TcgdexVariants;
 	variants_detailed?: TcgdexVariantDetailed[];

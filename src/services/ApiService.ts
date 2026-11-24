@@ -6,7 +6,11 @@ import type {
 	TcgdexSetBrief,
 	TcgdexSetFull,
 } from "../types";
-import { cardmarketSearchUrl, cardmarketSingleUrl } from "../cardmarket";
+import {
+	cardmarketSearchUrl,
+	cardmarketSingleUrl,
+	isLatinName,
+} from "../cardmarket";
 import type { SetIndexEntry } from "./SetIndexService";
 
 const BASE_URL = "https://api.tcgdex.net/v2";
@@ -123,10 +127,16 @@ export class ApiService {
 		return briefs.slice(0, 60);
 	}
 
-	/** Full card details for a single id. */
+	/**
+	 * Full card details for a single id. TCGdex matches ids case-insensitively,
+	 * so asking English for a Japanese id ("SV10-021", Heat Rotom) returns a
+	 * different English card ("sv10-021", Smoliv). Only an exact id match is
+	 * accepted, so localized ids never pick up another language's card.
+	 */
 	async getCard(id: string, lang?: string): Promise<TcgdexCardFull | null> {
 		const path = `/cards/${encodeURIComponent(id)}`;
-		return await this.get<TcgdexCardFull>(path, lang);
+		const card = await this.get<TcgdexCardFull>(path, lang);
+		return card && card.id === id ? card : null;
 	}
 
 	/**
@@ -251,7 +261,8 @@ export class ApiService {
 		this.enPending.add(setId);
 		void this.getSet(setId, "en")
 			.then((en) => {
-				if (en) this.enPending.delete(setId);
+				// Exact id only: "SV10" (ja) resolves to EN "sv10", another set.
+				if (en?.id === setId) this.enPending.delete(setId);
 			})
 			.catch(() => undefined);
 	}
@@ -324,22 +335,26 @@ export class ApiService {
 	}
 
 	/**
-	 * Best Cardmarket single-card URL for a card. Fetches the set to obtain the
-	 * abbreviation and appends the `{ABBR}{Number}` suffix (e.g. Furret-DAA136).
-	 * Falls back to a name search / suffix-less URL when data is missing.
+	 * Best Cardmarket single-card URL for a card, always built from English
+	 * data (Cardmarket uses English set + card names):
+	 * `/Singles/{EN set}/{EN name}-{ABBR}{Number}`.
+	 *
+	 * For a non-English card the English printing is looked up by the same id
+	 * (exact match only — see {@link getCard}). If there is none (a
+	 * Japanese-only release), falls back to a Cardmarket search by the card's
+	 * English name (derived from its Pokédex number), or no link at all when
+	 * no English name can be found. Never slugs a localized name.
 	 */
 	async cardmarketUrlForCard(
 		card: TcgdexCardFull,
 		lang?: string
-	): Promise<string> {
+	): Promise<string | undefined> {
 		const l = lang || this.lang;
-		// Cardmarket uses English card + set names, so always build from EN data.
-		const en = l === "en" ? card : await this.getCard(card.id, "en");
+		const en = l === "en" ? card : await this.englishPrinting(card);
 
-		if (!en?.set?.name) {
-			// No English set data (e.g. a Japanese-only set) — don't slug a
-			// localized name; fall back to a search by the best name we have.
-			return cardmarketSearchUrl(en?.name ?? card.name);
+		if (!en?.set?.name || !isLatinName(en.set.name) || !isLatinName(en.name)) {
+			const name = en?.name ?? (await this.englishNameFor(card));
+			return name && isLatinName(name) ? cardmarketSearchUrl(name) : undefined;
 		}
 
 		let code: string | undefined;
@@ -351,6 +366,55 @@ export class ApiService {
 			if (abbr && num) code = `${abbr}${num}`;
 		}
 		return cardmarketSingleUrl(en.set.name, en.name, code);
+	}
+
+	/** The English printing of a localized card (same id), if it exists. */
+	private async englishPrinting(
+		card: TcgdexCardFull
+	): Promise<TcgdexCardFull | null> {
+		const en = await this.getCard(card.id, "en");
+		if (!en) return null;
+		// Same id but a different Pokémon would mean a different card.
+		const a = card.dexId ?? [];
+		const b = en.dexId ?? [];
+		if (a.length && b.length && !a.some((d) => b.includes(d))) return null;
+		return en;
+	}
+
+	/**
+	 * English name for a card with no English printing, from its Pokédex
+	 * number(s): the most common English card name for that Pokémon, plus a
+	 * Latin mechanic suffix from the original name ("リザードンex" → "Charizard
+	 * ex", tag teams joined with " & "). Undefined for trainers/energy.
+	 */
+	async englishNameFor(card: TcgdexCardFull): Promise<string | undefined> {
+		const dex = card.dexId ?? [];
+		if (!dex.length) return undefined;
+		const species: string[] = [];
+		for (const n of dex) {
+			const list = await this.get<TcgdexCardBrief[]>(
+				`/cards?dexId=eq:${encodeURIComponent(String(n))}`,
+				"en"
+			);
+			const counts = new Map<string, number>();
+			for (const c of list ?? []) {
+				if (c.name) counts.set(c.name, (counts.get(c.name) ?? 0) + 1);
+			}
+			let best: string | undefined;
+			for (const [name, count] of counts) {
+				const cur = best ? counts.get(best) ?? 0 : -1;
+				if (count > cur || (count === cur && best && name.length < best.length)) {
+					best = name;
+				}
+			}
+			if (!best) return undefined;
+			species.push(best);
+		}
+		const suffix = card.name.match(
+			/(?:^|[^\p{Script=Latin}])((?:ex|EX|GX|V|VMAX|VSTAR|V-UNION|BREAK|LV\.X|Prime|LEGEND|δ|☆))\s*$/u
+		)?.[1];
+		const base = species.join(" & ");
+		return suffix ? `${base} ${suffix}` : base;
 	}
 
 	/** Format a card's local id the way Cardmarket does (zero-pad numeric to 3). */

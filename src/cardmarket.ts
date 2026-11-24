@@ -26,6 +26,17 @@ function deslug(value: string): string {
 	return decodeURIComponent(value).replace(/-+/g, " ").trim();
 }
 
+/**
+ * True when a name can be slugged for a Cardmarket URL: Latin script only
+ * (accents fine). Japanese/Korean/Chinese names would slug to nothing.
+ */
+export function isLatinName(value: string): boolean {
+	return (
+		/^[\p{Script=Latin}\p{N}\p{P}\p{S}\p{Zs}]+$/u.test(value.trim()) &&
+		slug(value).length > 0
+	);
+}
+
 export function cardmarketSearchUrl(name: string): string {
 	const q = encodeURIComponent(name.trim());
 	return `${CM_BASE}/Search?searchString=${q}`;
@@ -45,9 +56,15 @@ export function cardmarketSingleUrl(
 	return `${CM_BASE}/Singles/${slug(setName)}/${slug(name)}${suffix}`;
 }
 
-/** Sync fallback used when rendering rows without a cached URL. */
-export function cardmarketUrl(setName: string, name: string): string {
-	return cardmarketSingleUrl(setName, name);
+/**
+ * Sync fallback used when rendering rows without a cached URL. Returns
+ * undefined (no link) for non-Latin names, which Cardmarket can't slug.
+ */
+export function cardmarketUrl(setName: string, name: string): string | undefined {
+	if (!isLatinName(name)) return undefined;
+	return isLatinName(setName)
+		? cardmarketSingleUrl(setName, name)
+		: cardmarketSearchUrl(name);
 }
 
 /** Parsed hint extracted from a pasted Cardmarket URL. */

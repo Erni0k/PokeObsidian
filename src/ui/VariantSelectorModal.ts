@@ -89,7 +89,10 @@ export class VariantSelectorModal extends Modal {
 		cmLink.setAttr("target", "_blank");
 		void this.plugin.api
 			.cardmarketUrlForCard(this.card, this.lang)
-			.then((url) => (cmLink.href = url));
+			.then((url) => {
+				if (url) cmLink.href = url;
+				else cmLink.hide(); // e.g. Japanese-only trainer: no English name
+			});
 
 		if (this.plugin.settings.enableImagePreviews && this.card.image) {
 			const img = contentEl.createEl("img", {

@@ -22,6 +22,7 @@ export async function buildEntryFromCard(
 
 	await plugin.cache.putMeta(key, {
 		id,
+		lang,
 		name: card.name,
 		setName: card.set?.name ?? "",
 		setCode: card.set?.id ?? "",

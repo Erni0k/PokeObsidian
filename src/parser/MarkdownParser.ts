@@ -304,7 +304,7 @@ export class MarkdownParser {
 		const url =
 			this.plugin.cache.getMeta(e.key)?.cardmarketUrl ??
 			cardmarketUrl(e.setName, e.name);
-		const link = e.name ? `[${name}](${url})` : name;
+		const link = e.name && url ? `[${name}](${url})` : name;
 		return `${link}<!--k:${e.key}-->`;
 	}
 

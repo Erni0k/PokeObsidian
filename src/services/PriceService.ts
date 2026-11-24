@@ -105,15 +105,20 @@ export class PriceService {
 	 * the per-unit price (or undefined if unavailable).
 	 */
 	async refreshPrice(id: string, variant: string): Promise<number | undefined> {
-		const card = await this.plugin.api.getCard(id);
+		const key: CardKey = `${id}:${variant}`;
+		const prev = this.plugin.cache.getMeta(key);
+		// Ids are per language (e.g. Japanese "SV2a-006"): fetch in the
+		// language the card was added in, not just the preferred one.
+		const lang = prev?.lang ?? this.plugin.settings.preferredLanguage ?? "en";
+		const card = await this.plugin.api.getCard(id, lang);
 		if (!card) return undefined;
 		const price = this.provider.priceFor(card, variant);
-		const key: CardKey = `${id}:${variant}`;
 		const now = new Date().toISOString();
-		const cardmarketUrl = await this.plugin.api.cardmarketUrlForCard(card);
+		const cardmarketUrl = await this.plugin.api.cardmarketUrlForCard(card, lang);
 
 		await this.plugin.cache.putMeta(key, {
 			id,
+			lang,
 			name: card.name,
 			setName: card.set?.name ?? "",
 			setCode: card.set?.id ?? "",
@@ -126,7 +131,7 @@ export class PriceService {
 			cardmarketId: card.pricing?.cardmarket?.idProduct,
 			cardmarketUrl,
 			lastPriceUpdate: now,
-			dateAdded: this.plugin.cache.getMeta(key)?.dateAdded ?? now,
+			dateAdded: prev?.dateAdded ?? now,
 		});
 
 		return price;
