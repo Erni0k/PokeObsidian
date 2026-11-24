@@ -9,11 +9,17 @@ import type {
 
 type Mode = "regular" | "master";
 
-/** Parsed ```pokemon-set block: a set code/id plus optional `lang:` / `mode:`. */
+/**
+ * Parsed ```pokemon-set block: a set code/id plus optional `lang:`, `mode:`
+ * and `languages:` (which owned-card languages count: `any`, or a list like
+ * `en, fr`; default = the block's language).
+ */
 export interface SetBlockConfig {
 	set: string;
 	lang?: string;
 	mode?: Mode;
+	/** Lowercased Lang column values that count, or "any". */
+	languages?: string[] | "any";
 }
 
 export function parseSetBlock(source: string): SetBlockConfig {
@@ -33,6 +39,13 @@ export function parseSetBlock(source: string): SetBlockConfig {
 		else if (key === "lang" || key === "language") cfg.lang = val.toLowerCase();
 		else if (key === "mode" && /^(regular|master)$/i.test(val)) {
 			cfg.mode = val.toLowerCase() as Mode;
+		} else if (key === "languages" || key === "owned") {
+			const list = val
+				.toLowerCase()
+				.split(/[\s,]+/)
+				.filter(Boolean);
+			if (list.some((l) => l === "any" || l === "all")) cfg.languages = "any";
+			else if (list.length) cfg.languages = list;
 		}
 	}
 	return cfg;
@@ -162,7 +175,10 @@ export class SetCompletionBlock extends MarkdownRenderChild {
 	}
 
 	private async renderSnapshot(snapshot: SetSnapshot): Promise<void> {
-		const owned = await this.plugin.collection.scan();
+		const langs = this.ownedLanguages();
+		const owned = (await this.plugin.collection.scan()).filter(
+			(c) => !langs || langs.includes(c.language.trim().toLowerCase())
+		);
 		const result = this.plugin.setCompletion.compute(snapshot, owned);
 
 		const root = this.containerEl;
@@ -179,9 +195,12 @@ export class SetCompletionBlock extends MarkdownRenderChild {
 		title.createEl("h3", {
 			text: s.code ? `${s.name} (${s.code})` : s.name,
 		});
+		const langs = this.ownedLanguages();
 		title.createSpan({
 			cls: "pokemon-set-meta",
-			text: `${s.setId} · ${s.lang.toUpperCase()}`,
+			text: `${s.setId} · ${s.lang.toUpperCase()} · counting ${
+				langs ? langs.map((l) => l.toUpperCase()).join(", ") : "all languages"
+			}`,
 		});
 
 		const bars = head.createDiv({ cls: "pokemon-set-bars" });
@@ -274,6 +293,16 @@ export class SetCompletionBlock extends MarkdownRenderChild {
 			cls: "pokemon-collection-hint",
 			text: `Prices from ${when.toLocaleString()}${stale ? " — click “Refresh prices” for current ones" : ""}.`,
 		});
+	}
+
+	/**
+	 * Lang column values (lowercased) of owned cards that count, or null for
+	 * all. Default: the block's language, since its variants and prices are.
+	 */
+	private ownedLanguages(): string[] | null {
+		const l = this.cfg.languages;
+		if (l === "any") return null;
+		return l ?? [this.lang];
 	}
 
 	private hint(root: HTMLElement, text: string): void {
