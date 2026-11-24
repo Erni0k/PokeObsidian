@@ -49,19 +49,3 @@ export async function buildEntryFromCard(
 		key,
 	};
 }
-
-/** The sensible default variant for a card (prefers normal, else the first). */
-export function defaultVariantForCard(card: TcgdexCardFull): string {
-	const detailed = card.variants_detailed;
-	if (detailed?.length) {
-		const types = detailed.map((d) => d.type);
-		return types.includes("normal") ? "normal" : types[0];
-	}
-	const v = card.variants ?? {};
-	if (v.normal) return "normal";
-	if (v.reverse) return "reverse";
-	if (v.holo) return "holo";
-	if (v.firstEdition) return "firstEdition";
-	if (v.wPromo) return "promo";
-	return "normal";
-}

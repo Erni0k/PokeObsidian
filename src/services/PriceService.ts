@@ -5,18 +5,7 @@ import type {
 	TcgdexMarketPricing,
 	TcgdexVariantDetailed,
 } from "../types";
-
-/** True for variants that are foil on Cardmarket (holo / reverse-holo). */
-export function variantIsHolo(variant: string): boolean {
-	return /holo|reverse|1st|first/i.test(variant);
-}
-
-/** The underlying TCGdex variant type ("normal"|"reverse"|"holo") for a label. */
-function variantType(variant: string): "normal" | "reverse" | "holo" {
-	if (/reverse/i.test(variant)) return "reverse";
-	if (variantIsHolo(variant)) return "holo";
-	return "normal";
-}
+import { baseType, findDetail } from "../variants";
 
 /**
  * A price provider abstracts *where* prices come from. v1 ships only the
@@ -31,52 +20,67 @@ export interface PriceProvider {
 }
 
 /**
- * Reads Cardmarket prices (EUR). Uses the variant's own pricing from
- * `variants_detailed` when available, and the correct field set: `-holo` fields
- * for holo/reverse variants, plain fields for normal.
+ * Reads Cardmarket prices (EUR) for a variant.
+ *
+ * Pricing block: the variant's own `variants_detailed[].pricing` when it has
+ * one, else the card-level pricing.
+ *
+ * Field set: Cardmarket's `-holo` fields price the *foil version* of a
+ * product. So they are used for reverse holos, and for a holo only when the
+ * same product also has a non-foil Normal printing. A holo-only card (e.g.
+ * Base Set Charizard) is the product itself and is priced in the plain fields.
+ * Order: trend → avg30 → avg → low, falling back to the other set if empty.
  */
 export class CardmarketProvider implements PriceProvider {
 	readonly id = "tcgdex-cardmarket";
 	readonly currency = "EUR";
 
 	priceFor(card: TcgdexCardFull, variant: string): number | undefined {
-		const type = variantType(variant);
-		const holo = type !== "normal";
-		const detailed = card.variants_detailed?.find((v) => v.type === type);
-		const cm = detailed?.pricing?.cardmarket ?? card.pricing?.cardmarket;
-		return this.fromCardmarket(cm, holo);
+		const detail = findDetail(card, variant);
+		const type = detail?.type ?? this.legacyType(card, variant);
+		const cm = detail?.pricing?.cardmarket ?? card.pricing?.cardmarket;
+		return this.fromCardmarket(cm, this.usesFoilFields(card, type, detail));
 	}
 
-	/** Price for a specific detailed printing, using its own pricing block. */
-	priceFromDetail(detail: TcgdexVariantDetailed): number | undefined {
-		return this.fromCardmarket(
-			detail.pricing?.cardmarket,
-			detail.type !== "normal"
-		);
+	/** Type for a variant with no detailed printing (boolean-only cards, custom text). */
+	private legacyType(card: TcgdexCardFull, variant: string): string {
+		const t = baseType(variant);
+		if (t) return t;
+		// "firstEdition"/"promo"/custom: holo only if the card has no normal print.
+		const v = card.variants ?? {};
+		return v.holo && !v.normal && !/1st|first/i.test(variant) ? "holo" : "normal";
+	}
+
+	private usesFoilFields(
+		card: TcgdexCardFull,
+		type: string,
+		detail: TcgdexVariantDetailed | undefined
+	): boolean {
+		if (type === "reverse") return true;
+		if (type !== "holo") return false;
+		const detailed = card.variants_detailed;
+		if (detailed?.length) {
+			const normals = detailed.filter((d) => d.type === "normal");
+			if (!normals.length) return false;
+			// Separate Cardmarket products → the holo is its own (non-foil) product.
+			const id = detail?.pricing?.cardmarket?.idProduct;
+			const normalIds = normals
+				.map((d) => d.pricing?.cardmarket?.idProduct)
+				.filter((x): x is number => typeof x === "number");
+			if (id !== undefined && normalIds.length) return normalIds.includes(id);
+			return true;
+		}
+		return !!card.variants?.normal;
 	}
 
 	private fromCardmarket(
 		cm: TcgdexMarketPricing | undefined,
-		holo: boolean
+		foil: boolean
 	): number | undefined {
 		if (!cm) return undefined;
-		const candidates = holo
-			? [
-					cm["trend-holo"],
-					cm["avg30-holo"],
-					cm["avg7-holo"],
-					cm["avg-holo"],
-					cm["low-holo"],
-				]
-			: [cm.trend, cm.avg30, cm.avg7, cm.avg, cm.low];
-		for (const v of candidates) {
-			if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
-		}
-		// Fall back to the other field set if the preferred one is empty.
-		const alt = holo
-			? [cm.trend, cm.avg30, cm.avg, cm.low]
-			: [cm["trend-holo"], cm["avg30-holo"], cm["avg-holo"]];
-		for (const v of alt) {
+		const plain = [cm.trend, cm.avg30, cm.avg, cm.low];
+		const holo = [cm["trend-holo"], cm["avg30-holo"], cm["avg-holo"], cm["low-holo"]];
+		for (const v of foil ? [...holo, ...plain] : [...plain, ...holo]) {
 			if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
 		}
 		return undefined;

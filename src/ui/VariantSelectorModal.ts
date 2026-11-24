@@ -1,39 +1,17 @@
 import { Modal, Notice, Setting, TextComponent } from "obsidian";
 import type PokemonCollectionPlugin from "../main";
-import {
-	CollectionEntry,
-	TcgdexCardFull,
-	TcgdexVariantDetailed,
-	VARIANT_LABELS,
-} from "../types";
+import type { TcgdexCardFull } from "../types";
+import { defaultVariant, variantOptions, VariantOption } from "../variants";
 import { CardmarketProvider } from "../services/PriceService";
 import { buildEntryFromCard } from "./buildEntry";
 import type { AddCardCallback } from "./CardSearchModal";
 
 const CUSTOM = "__custom__";
 
-/** A selectable variant option shown in the dropdown. */
-interface VariantOption {
-	value: string;
-	label: string;
-	detail?: TcgdexVariantDetailed;
-}
-
-const TYPE_LABEL: Record<string, string> = {
-	normal: "Normal",
-	reverse: "Reverse Holo",
-	holo: "Holo",
-};
-
-function prettify(s: string): string {
-	return s
-		.replace(/-/g, " ")
-		.replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
 /**
- * "Add Card" step 2: choose a variant (TCGdex-exposed booleans + a custom
- * option), language, quantity and price, then insert into the note.
+ * "Add Card" step 2: choose a variant (from TCGdex `variants_detailed`, or the
+ * boolean `variants` as a fallback, plus a custom option), language, quantity
+ * and price (per variant), then insert into the note.
  */
 export class VariantSelectorModal extends Modal {
 	private plugin: PokemonCollectionPlugin;
@@ -66,74 +44,15 @@ export class VariantSelectorModal extends Modal {
 		this.onConfirm = onConfirm;
 		this.lang = lang || plugin.settings.preferredLanguage || "en";
 
-		this.options = this.variantOptions();
-		this.selectedVariant = this.defaultVariant();
+		this.options = variantOptions(card);
+		this.selectedVariant = defaultVariant(this.options);
 		this.language = this.lang.toUpperCase();
 		this.quantity = plugin.settings.defaultQuantity;
 		this.price = this.priceForValue(this.selectedVariant);
 	}
 
-	/**
-	 * Variants the card actually has, preferring the accurate `variants_detailed`
-	 * (so a holo-only card never offers "Normal"), with the boolean `variants`
-	 * as a fallback.
-	 */
-	private variantOptions(): VariantOption[] {
-		const detailed = this.card.variants_detailed;
-		if (detailed && detailed.length) {
-			const seen = new Set<string>();
-			const out: VariantOption[] = [];
-			for (const d of detailed) {
-				const value = this.detailValue(d);
-				if (seen.has(value)) continue;
-				seen.add(value);
-				out.push({ value, label: this.detailLabel(d), detail: d });
-			}
-			if (out.length) return out;
-		}
-
-		const v = this.card.variants ?? {};
-		const out: VariantOption[] = [];
-		if (v.normal) out.push({ value: "normal", label: VARIANT_LABELS.normal });
-		if (v.reverse) out.push({ value: "reverse", label: VARIANT_LABELS.reverse });
-		if (v.holo) out.push({ value: "holo", label: VARIANT_LABELS.holo });
-		if (v.firstEdition)
-			out.push({ value: "firstEdition", label: VARIANT_LABELS.firstEdition });
-		if (v.wPromo) out.push({ value: "promo", label: VARIANT_LABELS.promo });
-		if (!out.length) out.push({ value: "normal", label: VARIANT_LABELS.normal });
-		return out;
-	}
-
-	/** Stable variant string for a detailed printing (no pipe/colon). */
-	private detailValue(d: TcgdexVariantDetailed): string {
-		const parts = [d.type];
-		if (d.subtype) parts.push(d.subtype);
-		if (d.stamp?.length) parts.push(...d.stamp);
-		return parts.join("-").toLowerCase();
-	}
-
-	private detailLabel(d: TcgdexVariantDetailed): string {
-		const base = TYPE_LABEL[d.type] ?? prettify(d.type);
-		const extras: string[] = [];
-		if (d.subtype) extras.push(prettify(d.subtype));
-		if (d.stamp?.length) extras.push(...d.stamp.map(prettify));
-		return extras.length ? `${base} (${extras.join(", ")})` : base;
-	}
-
-	/** Pick a sensible default: the only option, else normal, else the first. */
-	private defaultVariant(): string {
-		if (this.options.length === 1) return this.options[0].value;
-		const normal = this.options.find((o) => o.value === "normal");
-		return (normal ?? this.options[0]).value;
-	}
-
-	/** Market price for a variant value, preferring its own detailed pricing. */
+	/** Market price for a variant value (its own detailed pricing first). */
 	private priceForValue(value: string): number | undefined {
-		const opt = this.options.find((o) => o.value === value);
-		if (opt?.detail) {
-			const p = this.provider.priceFromDetail(opt.detail);
-			if (p !== undefined) return p;
-		}
 		return this.provider.priceFor(this.card, value);
 	}
 

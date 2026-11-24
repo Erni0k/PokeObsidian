@@ -2,7 +2,8 @@ import { Modal, Setting } from "obsidian";
 import type PokemonCollectionPlugin from "../main";
 import type { CollectionEntry } from "../types";
 import { CardmarketProvider } from "../services/PriceService";
-import { buildEntryFromCard, defaultVariantForCard } from "./buildEntry";
+import { buildEntryFromCard } from "./buildEntry";
+import { resolveVariant } from "../variants";
 
 export interface BulkItem {
 	entry: CollectionEntry;
@@ -139,7 +140,7 @@ export class BulkAddModal extends Modal {
 		const card = await this.plugin.api.getCard(res.brief.id, lang);
 		if (!card) return null;
 
-		const variant = p.variant || defaultVariantForCard(card);
+		const variant = resolveVariant(card, p.variant ?? "");
 		const qty = p.qty && p.qty > 0 ? p.qty : this.plugin.settings.defaultQuantity;
 		const price = this.provider.priceFor(card, variant);
 		const entry = await buildEntryFromCard(
