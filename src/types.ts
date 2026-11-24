@@ -211,7 +211,10 @@ export interface TcgdexSetBrief {
 
 /** Full set as returned by `/sets/{id}` (adds abbreviation + card list). */
 export interface TcgdexSetFull extends TcgdexSetBrief {
-	/** Cardmarket-style set abbreviation, e.g. { official: "DAA" }. */
-	abbreviation?: { official?: string; localId?: string };
+	/**
+	 * Set abbreviation, e.g. { official: "DRI", localized: "RVD" }. `official`
+	 * is the Cardmarket code; `localized` is the printed code in some languages.
+	 */
+	abbreviation?: { official?: string; localized?: string };
 	cards?: TcgdexCardBrief[];
 }

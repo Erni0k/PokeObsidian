@@ -11,6 +11,10 @@ export interface SetIndexEntry {
 	name: string;
 	/** Cardmarket-style short code (abbreviation.official), uppercased. */
 	abbreviation?: string;
+	/** Localized printed code (e.g. FR "RVD" for DRI), uppercased, if any. */
+	abbreviationLocalized?: string;
+	/** True once recorded from a full set (both codes are known). */
+	full?: boolean;
 	total?: number;
 	official?: number;
 }
@@ -60,6 +64,8 @@ export class SetIndexService {
 				id: b.id,
 				name: b.name,
 				abbreviation: prev?.abbreviation,
+				abbreviationLocalized: prev?.abbreviationLocalized,
+				full: prev?.full,
 				total: b.cardCount?.total ?? prev?.total,
 				official: b.cardCount?.official ?? prev?.official,
 			};
@@ -74,6 +80,8 @@ export class SetIndexService {
 			id: set.id,
 			name: set.name,
 			abbreviation: set.abbreviation?.official?.toUpperCase(),
+			abbreviationLocalized: set.abbreviation?.localized?.toUpperCase(),
+			full: true,
 			total: set.cardCount?.total ?? m[set.id]?.total,
 			official: set.cardCount?.official ?? m[set.id]?.official,
 		};
@@ -82,15 +90,19 @@ export class SetIndexService {
 
 	// --- lookups ------------------------------------------------------------
 
-	/** Resolve a set short code to a set id from the index (lang then EN). */
+	/**
+	 * Resolve a set short code to a set id from the index: the official code
+	 * in the given language, then its localized code, then the English layer.
+	 */
 	findSetIdByCode(code: string, lang?: string): string | undefined {
 		const c = code.trim().toUpperCase();
-		for (const l of [this.lang(lang), "en"]) {
-			const m = this.index[l];
-			if (!m) continue;
-			for (const e of Object.values(m)) {
-				if (e.abbreviation === c) return e.id;
-			}
+		if (!c) return undefined;
+		for (const l of [...new Set([this.lang(lang), "en"])]) {
+			const entries = Object.values(this.index[l] ?? {});
+			const hit =
+				entries.find((e) => e.abbreviation === c) ??
+				entries.find((e) => e.abbreviationLocalized === c);
+			if (hit) return hit.id;
 		}
 		return undefined;
 	}
@@ -121,10 +133,16 @@ export class SetIndexService {
 
 		let fetched = 0;
 		for (const id of ids) {
-			if (this.map(l)[id]?.abbreviation) continue; // already known
+			if (this.map(l)[id]?.full) continue; // codes already known
 			const set = await this.plugin.api.getSet(id, l);
 			fetched++;
-			if (set?.abbreviation?.official?.toUpperCase() === c) return id;
+			const a = set?.abbreviation;
+			if (
+				a?.official?.toUpperCase() === c ||
+				a?.localized?.toUpperCase() === c
+			) {
+				return id;
+			}
 			if (fetched >= LAZY_FETCH_CAP) break;
 		}
 		return this.findSetIdByCode(code, lang);

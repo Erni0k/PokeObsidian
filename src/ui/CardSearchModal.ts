@@ -1,13 +1,27 @@
 import { Modal, Notice, Setting } from "obsidian";
 import type PokemonCollectionPlugin from "../main";
 import type { CollectionEntry, TcgdexCardBrief } from "../types";
-import type { CardSearchQuery } from "../services/ApiService";
+import type {
+	CardSearchQuery,
+	CodeLookupResult,
+} from "../services/ApiService";
 import { SUPPORTED_LANGUAGES } from "../settings";
 import { VariantSelectorModal } from "./VariantSelectorModal";
 import { ManualAddModal } from "./ManualAddModal";
 import { SetSuggest } from "./SetSuggest";
 
 export type AddCardCallback = (entry: CollectionEntry, addQty: number) => void;
+
+/** A parsed "set code + number" query. */
+interface DirectQuery {
+	/** Short code ("DRI") or raw set id ("sv10") as typed. */
+	code: string;
+	num: string;
+	/** Which input it came from (decides the fallback when the code is unknown). */
+	source: "number" | "name" | "set";
+	/** Exact set id when already known (picked from set autocomplete). */
+	setId?: string;
+}
 
 /**
  * "Add Card" step 1: search TCGdex by name / number / set and pick a card.
@@ -26,6 +40,8 @@ export class CardSearchModal extends Modal {
 	private lang: string;
 	private resultsEl!: HTMLElement;
 	private searchTimer: number | null = null;
+	/** Incremented per search so a slow, stale response can't overwrite a newer one. */
+	private searchSeq = 0;
 	/** Dedupes set-abbreviation lookups across result rows. */
 	private abbrCache = new Map<string, Promise<string | undefined>>();
 
@@ -155,13 +171,20 @@ export class CardSearchModal extends Modal {
 
 	/**
 	 * Run a search. `deep` (Search button / Enter) allows network-heavy work
-	 * such as lazily building the set index to resolve an unknown set code.
+	 * such as lazily building the set index to resolve an unknown set code,
+	 * and opens the variant selector straight away for a single direct hit.
 	 */
 	private async runSearch(deep: boolean): Promise<void> {
-		// Direct "set code + number" lookup (e.g. "DRI 062", "sv10-021").
+		if (deep && this.searchTimer) {
+			window.clearTimeout(this.searchTimer);
+			this.searchTimer = null;
+		}
+		const seq = ++this.searchSeq;
+
+		// Direct "set code + number" lookup (e.g. "DRI 062", "DRI062", "sv10-021").
 		const direct = this.parseDirect();
 		if (direct) {
-			await this.directLookup(direct.code, direct.num, deep);
+			await this.directLookup(direct, deep, seq);
 			return;
 		}
 
@@ -173,15 +196,21 @@ export class CardSearchModal extends Modal {
 		}
 
 		this.setHint("Searching…");
+		const results = await this.plainSearch({ name, number, set });
+		if (seq !== this.searchSeq) return;
+		if (results) this.renderResults(results);
+		else this.setHint("Search failed. Check your connection.", true);
+	}
+
+	/** Regular name / number / set search; null on failure. */
+	private async plainSearch(
+		query: CardSearchQuery
+	): Promise<TcgdexCardBrief[] | null> {
 		try {
-			const results = await this.plugin.api.searchCards(
-				{ name, number, set },
-				this.lang
-			);
-			this.renderResults(results);
+			return await this.plugin.api.searchCards(query, this.lang);
 		} catch (err) {
 			console.error("[pokemon-collection] search failed", err);
-			this.setHint("Search failed. Check your connection.", true);
+			return null;
 		}
 	}
 
@@ -195,53 +224,105 @@ export class CardSearchModal extends Modal {
 		});
 	}
 
-	/** Detect a "CODE NUMBER" / "setId-localId" direct lookup from the inputs. */
-	private parseDirect(): { code: string; num: string } | null {
-		const single = /^([A-Za-z][A-Za-z0-9.]{1,6})[\s-]+([A-Za-z]{0,3}\d{1,4}[A-Za-z]?)$/;
-		for (const raw of [this.numberValue, this.nameValue]) {
-			const m = raw.trim().match(single);
-			if (m) return { code: m[1], num: m[2] };
+	/**
+	 * Detect a direct lookup from the inputs:
+	 * - "DRI 062", "dri-062", "sv10-021", "sv10 21" (code/id, separator, number)
+	 * - "DRI062" (letters-only code glued to the number)
+	 * typed into Card number or Card name; or a set picked from autocomplete /
+	 * a code-like Set field together with a number.
+	 */
+	private parseDirect(): DirectQuery | null {
+		const separated = /^([A-Za-z][A-Za-z0-9.]{1,7})[\s-]+([A-Za-z]{0,3}\d{1,4}[A-Za-z]?)$/;
+		const glued = /^([A-Za-z]{2,4})(\d{1,4})$/;
+		const fields: [string, DirectQuery["source"]][] = [
+			[this.numberValue, "number"],
+			[this.nameValue, "name"],
+		];
+		for (const [raw, source] of fields) {
+			const v = raw.trim();
+			const m = v.match(separated) ?? v.match(glued);
+			if (m) return { code: m[1], num: m[2], source };
 		}
-		// Code-like Set field + a number field.
-		const set = this.setValue.trim();
+
 		const num = this.numberValue.trim();
-		if (
-			num &&
-			/^[A-Za-z0-9.]{2,10}$/.test(set) &&
-			/^[A-Za-z]{0,3}\d{1,4}[A-Za-z]?$/.test(num)
-		) {
-			return { code: set, num };
+		if (!num || !/^[A-Za-z]{0,3}\d{1,4}[A-Za-z]?$/.test(num)) return null;
+		if (this.pickedSetId) {
+			return { code: this.pickedSetId, num, source: "set", setId: this.pickedSetId };
 		}
+		const set = this.setValue.trim();
+		if (/^[A-Za-z0-9.]{2,10}$/.test(set)) return { code: set, num, source: "set" };
 		return null;
 	}
 
-	/** Resolve a set code + number to one card and open the variant selector. */
+	/** Resolve a set code + number to card(s); one hit opens the variant selector. */
 	private async directLookup(
-		code: string,
-		num: string,
-		deep: boolean
+		q: DirectQuery,
+		deep: boolean,
+		seq: number
 	): Promise<void> {
-		this.setHint(`Looking up ${code.toUpperCase()} ${num}…`);
-		const res = await this.plugin.api.findCardByCodeNumber(
-			code,
-			num,
-			this.lang,
+		const label = `${q.code.toUpperCase()} ${q.num}`;
+		this.setHint(`Looking up ${label}…`);
+
+		// Long letter-only words ("Pikachu 58", Set "Jungle") are names, not
+		// codes: skip the (possibly network-heavy) code resolution for them.
+		const codeLike = /\d/.test(q.code) || /^[A-Za-z]{2,4}$/.test(q.code);
+
+		let res: CodeLookupResult = { cards: [] };
+		try {
+			if (q.setId) {
+				res = await this.plugin.api.findCardsInSet(q.setId, q.num, this.lang);
+			} else if (codeLike || q.source === "number") {
+				res = await this.plugin.api.findCardByCodeNumber(
+					q.code,
+					q.num,
+					this.lang,
+					deep
+				);
+			}
+		} catch (err) {
+			console.error("[pokemon-collection] code lookup failed", err);
+			if (seq === this.searchSeq) {
+				this.setHint("Lookup failed. Check your connection.", true);
+			}
+			return;
+		}
+		if (seq !== this.searchSeq) return;
+
+		if (res.setId) {
+			const where = res.setName ?? res.setId;
+			if (!res.cards.length) {
+				this.setHint(`No card #${q.num} in ${where}.`);
+			} else if (res.cards.length === 1 && deep) {
+				this.setHint(`Found ${res.cards[0].name} (${label}).`);
+				await this.pickCard(res.cards[0]);
+			} else {
+				this.renderResults(res.cards);
+			}
+			return;
+		}
+
+		// Not a set code. The text may still be a card or set name ("Pikachu 58",
+		// Set "Jungle" + number), so fall back to the regular search first.
+		if (q.source !== "number") {
+			const query: CardSearchQuery =
+				q.source === "name"
+					? { name: q.code, number: q.num, set: this.setValue.trim() }
+					: { name: this.nameValue.trim(), number: q.num, set: q.code };
+			const results = await this.plainSearch(query);
+			if (seq !== this.searchSeq) return;
+			if (results?.length || !codeLike) {
+				if (results) this.renderResults(results);
+				else this.setHint("Search failed. Check your connection.", true);
+				return;
+			}
+		}
+
+		this.setHint(
+			deep
+				? `Set code "${q.code.toUpperCase()}" doesn't match any set. Check the code, run "Rebuild Pokémon set index", or search by set name.`
+				: `Press Enter to look up set code "${q.code.toUpperCase()}".`,
 			deep
 		);
-
-		if (!res.setId) {
-			this.setHint(
-				deep
-					? `Set code "${code.toUpperCase()}" not recognized. Try "Rebuild Pokémon set index", or search by set name.`
-					: `Press Search to look up set code "${code.toUpperCase()}".`
-			);
-			return;
-		}
-		if (!res.brief) {
-			this.setHint(`No card #${num} in ${res.setName ?? res.setId}.`);
-			return;
-		}
-		await this.pickCard(res.brief);
 	}
 
 	/** Get the set's short code, caching the in-flight promise per set. */

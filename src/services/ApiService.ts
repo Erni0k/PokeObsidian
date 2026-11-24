@@ -22,8 +22,10 @@ export interface CodeLookupResult {
 	setId?: string;
 	/** Set display name (for messages). */
 	setName?: string;
-	/** Matching card brief, if a card with that number exists in the set. */
+	/** First matching card brief (convenience for single-card callers). */
 	brief?: TcgdexCardBrief;
+	/** Every card in the set whose collector number matches. */
+	cards: TcgdexCardBrief[];
 }
 
 /** Compare collector numbers leniently ("062" == "62", case-insensitive). */
@@ -102,9 +104,7 @@ export class ApiService {
 		}
 
 		if (number) {
-			briefs = briefs.filter(
-				(c) => (c.localId ?? "").toString() === number
-			);
+			briefs = briefs.filter((c) => sameNumber(c.localId, number));
 		}
 
 		return briefs.slice(0, 60);
@@ -117,8 +117,11 @@ export class ApiService {
 	}
 
 	/**
-	 * Resolve a set code + collector number to a card brief. `deep` allows
-	 * lazily building the set index to resolve an unknown code (network-heavy).
+	 * Resolve a set code + collector number to card briefs. The code may be a
+	 * short code ("DRI", or a localized one like FR "RVD") or a raw set id
+	 * ("sv10"). `deep` allows lazily building the set index to resolve an
+	 * unknown code (network-heavy); it searches the requested language first,
+	 * then English, since short codes are sometimes localized.
 	 */
 	async findCardByCodeNumber(
 		code: string,
@@ -126,20 +129,86 @@ export class ApiService {
 		lang?: string,
 		deep = false
 	): Promise<CodeLookupResult> {
-		let setId = this.plugin.setIndex.findSetIdByCode(code, lang);
-		// A lowercase/numeric token may be a raw set id — verify by fetching it.
-		if (!setId && /[a-z0-9]/.test(code) && code === code.toLowerCase()) {
-			const maybe = await this.getSet(code.toLowerCase(), lang);
-			if (maybe?.cards?.length) setId = maybe.id;
-		}
-		if (!setId && deep) {
-			setId = await this.plugin.setIndex.resolveCode(code, lang);
-		}
-		if (!setId) return {};
+		const l = lang || this.lang;
+		const setId = await this.resolveSetCode(code, l, deep);
+		if (!setId) return { cards: [] };
+		return this.findCardsInSet(setId, num, l);
+	}
 
+	/** Map a short code or raw set id to a set id, or undefined if unknown. */
+	private async resolveSetCode(
+		code: string,
+		lang: string,
+		deep: boolean
+	): Promise<string | undefined> {
+		const index = this.plugin.setIndex;
+		const known = index.findSetIdByCode(code, lang);
+		if (known) return known;
+
+		// Raw set ids are lowercase and usually contain a digit ("sv10",
+		// "swsh12.5"); verify by fetching rather than trusting the shape.
+		const lc = code.toLowerCase();
+		if (/\d/.test(code) || code === lc) {
+			const maybe = await this.getSet(lc, lang);
+			if (maybe?.cards?.length) return maybe.id;
+		}
+
+		if (!deep) return undefined;
+		const found = await index.resolveCode(code, lang);
+		if (found || lang === "en") return found;
+		return await index.resolveCode(code, "en");
+	}
+
+	/**
+	 * Cards in a set with the given collector number. Matches the set's card
+	 * list leniently ("62" == "062"); if that yields nothing, tries the card id
+	 * directly ("{setId}-{localId}", as typed and TCGdex-padded to 3 digits).
+	 */
+	async findCardsInSet(
+		setId: string,
+		num: string,
+		lang?: string
+	): Promise<CodeLookupResult> {
 		const set = await this.getSet(setId, lang);
-		const brief = set?.cards?.find((c) => sameNumber(c.localId, num));
-		return { setId, setName: set?.name, brief: brief ?? undefined };
+		let cards = set?.cards?.filter((c) => sameNumber(c.localId, num)) ?? [];
+
+		if (!cards.length) {
+			for (const local of this.localIdCandidates(num)) {
+				const full = await this.getCard(`${setId}-${local}`, lang);
+				if (full) {
+					cards = [
+						{
+							id: full.id,
+							localId: full.localId,
+							name: full.name,
+							image: full.image,
+						},
+					];
+					break;
+				}
+			}
+		}
+		return {
+			setId,
+			setName: set?.name,
+			brief: cards[0],
+			cards,
+		};
+	}
+
+	/** Plausible TCGdex localIds for a typed number ("21" → "21", "021"). */
+	private localIdCandidates(num: string): string[] {
+		const raw = num.trim();
+		const out = [raw];
+		const m = raw.match(/^([A-Za-z]*)(\d+)([A-Za-z]?)$/);
+		if (m) {
+			const [, pre, digits, suf] = m;
+			const stripped = digits.replace(/^0+(?=\d)/, "");
+			out.push(`${pre}${stripped.padStart(3, "0")}${suf}`);
+			out.push(`${pre}${stripped}${suf}`);
+			if (pre) out.push(`${pre.toUpperCase()}${stripped.padStart(2, "0")}${suf}`);
+		}
+		return [...new Set(out)];
 	}
 
 	/** Full set details (includes the Cardmarket abbreviation). */
