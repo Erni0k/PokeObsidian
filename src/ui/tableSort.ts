@@ -9,6 +9,9 @@ const FIELD_BY_HEADER: Record<string, SortField> = {
 	number: "number",
 	variant: "variant",
 	lang: "language",
+	cond: "condition",
+	condition: "condition",
+	grade: "grade",
 	qty: "quantity",
 	price: "price",
 };
@@ -18,6 +21,7 @@ const DESC_FIRST: ReadonlySet<SortField> = new Set([
 	"price",
 	"quantity",
 	"number",
+	"grade",
 ]);
 
 /** Remembered sort per note path, so repeat clicks toggle direction. */

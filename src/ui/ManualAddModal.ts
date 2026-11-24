@@ -3,6 +3,13 @@ import type PokemonCollectionPlugin from "../main";
 import type { CollectionEntry } from "../types";
 import { cardmarketUrl, slug } from "../cardmarket";
 import type { AddCardCallback } from "./CardSearchModal";
+import {
+	Condition,
+	CONDITION_LABELS,
+	CONDITIONS,
+	DEFAULT_CONDITION,
+	normalizeGrade,
+} from "../condition";
 
 export interface ManualDefaults {
 	name?: string;
@@ -27,6 +34,8 @@ export class ManualAddModal extends Modal {
 	private language: string;
 	private quantity: number;
 	private price: number | undefined;
+	private condition: Condition = DEFAULT_CONDITION;
+	private grade = "";
 
 	constructor(
 		plugin: PokemonCollectionPlugin,
@@ -59,6 +68,14 @@ export class ManualAddModal extends Modal {
 		this.textRow(contentEl, "Set", this.setName, (v) => (this.setName = v));
 		this.textRow(contentEl, "Number", this.number, (v) => (this.number = v));
 		this.textRow(contentEl, "Variant", this.variant, (v) => (this.variant = v));
+		new Setting(contentEl).setName("Condition").addDropdown((dd) => {
+			for (const c of CONDITIONS) dd.addOption(c, `${c} — ${CONDITION_LABELS[c]}`);
+			dd.setValue(this.condition).onChange((v) => (this.condition = v as Condition));
+		});
+		new Setting(contentEl)
+			.setName("Grade")
+			.setDesc("Leave empty for raw cards, e.g. PSA 10, CGC 9.5.")
+			.addText((t) => t.setPlaceholder("PSA 10").onChange((v) => (this.grade = v)));
 		this.textRow(contentEl, "Language", this.language, (v) => (this.language = v));
 		this.textRow(contentEl, "Quantity", String(this.quantity), (v) => {
 			const n = Number.parseInt(v, 10);
@@ -104,19 +121,23 @@ export class ManualAddModal extends Modal {
 
 		// Synthetic id (no pipe/colon) so identity is stable without TCGdex.
 		const id = `manual-${slug(setName)}-${slug(name)}-${slug(this.number) || "x"}`;
-		const key = this.plugin.markdown.keyOf(id, variant);
+		const grade = normalizeGrade(this.grade);
+		const key = this.plugin.markdown.keyOf(id, variant, this.condition, grade);
+		const printing = this.plugin.markdown.printingKey({ id, variant });
 		const now = new Date().toISOString();
+		// A graded price is that slab's own, not the card's market price.
+		const market = grade ? this.plugin.cache.getMeta(printing)?.marketPrice : this.price;
 
-		await this.plugin.cache.putMeta(key, {
+		await this.plugin.cache.putMeta(printing, {
 			id,
 			name,
 			setName,
 			setCode: "",
-			marketPrice: this.price,
+			marketPrice: market,
 			currency: "EUR",
 			cardmarketUrl: cardmarketUrl(setName, name),
-			lastPriceUpdate: this.price !== undefined ? now : undefined,
-			dateAdded: this.plugin.cache.getMeta(key)?.dateAdded ?? now,
+			lastPriceUpdate: market !== undefined ? now : undefined,
+			dateAdded: this.plugin.cache.getMeta(printing)?.dateAdded ?? now,
 		});
 
 		const entry: CollectionEntry = {
@@ -126,6 +147,8 @@ export class ManualAddModal extends Modal {
 			number: this.number.trim(),
 			variant,
 			language: this.language.trim().toUpperCase() || "EN",
+			condition: this.condition,
+			grade: grade || undefined,
 			quantity: this.quantity,
 			price: this.price,
 			key,

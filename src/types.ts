@@ -21,7 +21,12 @@ export type KnownVariant =
  */
 export type Variant = KnownVariant | string;
 
-/** Stable identity used to join a table row to the JSON cache: `id:variant`. */
+/**
+ * Row identity: `id:variant:cond` plus `:grade` for graded cards (legacy
+ * `id:variant` = NM). The JSON caches (meta, price history) are keyed by the
+ * printing only, `id:variant`, since image and market price don't depend on
+ * condition.
+ */
 export type CardKey = string;
 
 /** Human display labels for the known variants. */
@@ -52,9 +57,16 @@ export interface CollectionEntry {
 	language: string;
 	/** How many copies are owned. */
 	quantity: number;
-	/** Per-unit market price in the configured currency. May be undefined. */
+	/** Raw card condition (NM, LP, MP, HP, DMG); NM for legacy rows. */
+	condition: string;
+	/** Professional grade, e.g. "PSA 10"; empty/undefined for raw cards. */
+	grade?: string;
+	/**
+	 * Per-unit price in the configured currency. May be undefined. Graded
+	 * cards are priced by hand only (never overwritten by price updates).
+	 */
 	price?: number;
-	/** Composite cache key `id:variant`. */
+	/** Row identity `id:variant:cond[:grade]`. */
 	key: CardKey;
 }
 

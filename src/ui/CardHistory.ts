@@ -29,8 +29,9 @@ export function resolveHistoryKey(
 	if (!t) return undefined;
 	const keys = plugin.cache.getCardHistoryKeys();
 	if (t.includes(":")) {
-		const lc = t.toLowerCase();
-		return keys.find((k) => k.toLowerCase() === lc) ?? t;
+		// History is per printing: a full row key (…:LP, …:NM:PSA 10) maps to id:variant.
+		const lc = plugin.markdown.printingKey(t).toLowerCase();
+		return keys.find((k) => k.toLowerCase() === lc) ?? plugin.markdown.printingKey(t);
 	}
 	return keys.find((k) => plugin.markdown.splitKey(k).id === t);
 }

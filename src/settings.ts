@@ -5,6 +5,11 @@ import {
 	SortDirection,
 	SortField,
 } from "./parser/MarkdownParser";
+import {
+	CONDITION_LABELS,
+	CONDITIONS,
+	DEFAULT_CONDITION_MULTIPLIERS,
+} from "./condition";
 
 /** Languages supported by the TCGdex API. */
 export const SUPPORTED_LANGUAGES = [
@@ -43,6 +48,8 @@ export interface PokemonCollectionSettings {
 	setsListTtlHours: number;
 	/** Max recorded price points kept per card. */
 	priceHistoryPoints: number;
+	/** Price multiplier per raw condition vs. the Cardmarket (NM) price. */
+	conditionMultipliers: Record<string, number>;
 	/** Default quantity added per "Add Card" action. */
 	defaultQuantity: number;
 	/** Rendered image width in pixels (previews). */
@@ -69,6 +76,7 @@ export const DEFAULT_SETTINGS: PokemonCollectionSettings = {
 	cacheDurationHours: 24,
 	setsListTtlHours: 6,
 	priceHistoryPoints: 100,
+	conditionMultipliers: { ...DEFAULT_CONDITION_MULTIPLIERS },
 	defaultQuantity: 1,
 	imageSize: 200,
 	enableImagePreviews: false,
@@ -265,6 +273,36 @@ export class PokemonCollectionSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					});
 			});
+
+		containerEl.createEl("h3", { text: "Condition pricing" });
+		containerEl.createEl("p", {
+			cls: "setting-item-description",
+			text: "Raw cards are priced as Cardmarket price × multiplier for their condition. Graded cards (with a Grade) are never auto-priced — enter their price by hand; price updates keep it.",
+		});
+		for (const cond of CONDITIONS) {
+			if (cond === "NM") continue;
+			new Setting(containerEl)
+				.setName(`${cond} — ${CONDITION_LABELS[cond]}`)
+				.addText((text) => {
+					const cur =
+						this.plugin.settings.conditionMultipliers?.[cond] ??
+						DEFAULT_CONDITION_MULTIPLIERS[cond];
+					text
+						.setPlaceholder(String(DEFAULT_CONDITION_MULTIPLIERS[cond]))
+						.setValue(String(cur))
+						.onChange(async (value) => {
+							const n = Number.parseFloat(value.replace(",", "."));
+							this.plugin.settings.conditionMultipliers = {
+								...this.plugin.settings.conditionMultipliers,
+								[cond]:
+									Number.isFinite(n) && n >= 0
+										? n
+										: DEFAULT_CONDITION_MULTIPLIERS[cond],
+							};
+							await this.plugin.saveSettings();
+						});
+				});
+		}
 
 		new Setting(containerEl)
 			.setName("Enable image previews")

@@ -259,8 +259,8 @@ export class CommandController {
 			new Notice('Use this in a wishlist note (frontmatter "pokemon-list: wishlist").');
 			return;
 		}
-		const key = md.keyFromRow(editor.getLine(editor.getCursor().line));
-		const entry = key ? md.parseEntries(editor.getValue()).find((e) => e.key === key) : undefined;
+		const entry = md.entryAtLine(editor.getValue(), editor.getLine(editor.getCursor().line));
+		const key = entry?.key;
 		if (!key || !entry) {
 			new Notice("Place the cursor on a card row in the wishlist table.");
 			return;
@@ -283,7 +283,7 @@ export class CommandController {
 					const qty = Math.max(1, entry.quantity);
 					try {
 						// Add first (merges into an existing row with the same
-						// id:variant key), then remove from the wishlist.
+						// id:variant:cond[:grade] key), then remove from the wishlist.
 						await this.modifyNote(target, (c) => this.withEntry(c, entry, qty));
 						await this.modifyNote(file, (c) => {
 							const rest = md.parseEntries(c).filter((e) => e.key !== key);
@@ -550,34 +550,35 @@ export class CommandController {
 
 	private async updateSelectedCard(editor: Editor): Promise<void> {
 		const md = this.plugin.markdown;
-		const line = editor.getLine(editor.getCursor().line);
-		const key = md.keyFromRow(line);
-		if (!key) {
+		const content = editor.getValue();
+		const row = md.entryAtLine(content, editor.getLine(editor.getCursor().line));
+		if (!row) {
 			new Notice("Place the cursor on a card row in the collection table.");
 			return;
 		}
-		const content = editor.getValue();
-		const row = md.parseEntries(content).find((e) => e.key === key);
-		if (!row) {
-			new Notice("Could not identify the card on this row.");
+		if (row.grade) {
+			new Notice(`${row.name} is graded (${row.grade}) — its price is set by hand.`);
 			return;
 		}
 
 		const notice = new Notice(`Updating ${row.name}…`, 0);
-		const price = await this.refreshKey(key);
+		const market = await this.marketPrices([row]);
 		notice.hide();
 
 		const entries = this.maybeAutoSort(
-			md
-				.parseEntries(content)
-				.map((e) => (e.key === key ? { ...e, price } : e))
+			this.applyPrices(md.parseEntries(content), market, (e) => e.key === row.key)
 		);
 		const newContent = md.replaceSection(content, entries);
 		if (newContent) this.setEditorValue(editor, newContent);
 
+		const price = this.plugin.price.rowPrice(
+			market.get(md.printingKey(row)),
+			row.condition,
+			row.grade
+		);
 		new Notice(
 			price !== undefined
-				? `${row.name}: ${md.formatPrice(price)}`
+				? `${row.name} (${row.condition}): ${md.formatPrice(price)}`
 				: `No price available for ${row.name}.`
 		);
 	}
@@ -592,18 +593,12 @@ export class CommandController {
 			return;
 		}
 		const entries = md.parseEntries(content);
-		const keys = uniqueKeys(entries);
 
-		const notice = new Notice(`Updating ${keys.length} cards…`, 0);
-		const priceMap = await this.refreshKeys(keys);
+		const notice = new Notice(`Updating ${entries.length} cards…`, 0);
+		const market = await this.marketPrices(entries);
 		notice.hide();
 
-		const updated = this.maybeAutoSort(
-			entries.map((e) => ({
-				...e,
-				price: priceMap.get(e.key) ?? e.price,
-			}))
-		);
+		const updated = this.maybeAutoSort(this.applyPrices(entries, market));
 		const newContent = md.replaceSection(content, updated);
 		if (newContent) this.setEditorValue(editor, newContent);
 
@@ -620,22 +615,20 @@ export class CommandController {
 			return;
 		}
 
-		// First pass: read notes and collect every distinct key.
+		// First pass: read notes and collect every row.
 		const notes: Array<{ file: TFile; content: string; entries: CollectionEntry[] }> =
 			[];
-		const allKeys = new Set<CardKey>();
+		const all: CollectionEntry[] = [];
 		for (const file of files) {
 			const content = await this.plugin.app.vault.read(file);
 			const entries = md.parseEntries(content);
 			notes.push({ file, content, entries });
-			for (const e of entries) allKeys.add(e.key);
+			all.push(...entries);
 		}
 
-		const notice = new Notice(
-			`Updating prices for ${allKeys.size} cards…`,
-			0
-		);
-		const priceMap = await this.refreshKeys([...allKeys]);
+		const printings = new Set(all.filter((e) => !e.grade).map((e) => md.printingKey(e)));
+		const notice = new Notice(`Updating prices for ${printings.size} cards…`, 0);
+		const market = await this.marketPrices(all);
 
 		// Second pass: rewrite each note and tally the portfolio value.
 		let totalValue = 0;
@@ -643,12 +636,7 @@ export class CommandController {
 		const uniq = new Set<CardKey>();
 
 		for (const note of notes) {
-			const updated = this.maybeAutoSort(
-				note.entries.map((e) => ({
-					...e,
-					price: priceMap.get(e.key) ?? e.price,
-				}))
-			);
+			const updated = this.maybeAutoSort(this.applyPrices(note.entries, market));
 			const newContent = md.replaceSection(note.content, updated);
 			if (newContent && newContent !== note.content) {
 				await this.plugin.app.vault.modify(note.file, newContent);
@@ -673,7 +661,7 @@ export class CommandController {
 
 		notice.hide();
 		new Notice(
-			`Updated ${allKeys.size} cards. Collection value: €${totalValue.toFixed(
+			`Updated ${printings.size} cards. Collection value: €${totalValue.toFixed(
 				2
 			)}.`
 		);
@@ -681,22 +669,42 @@ export class CommandController {
 
 	// --- shared price refresh ----------------------------------------------
 
-	private async refreshKey(key: CardKey): Promise<number | undefined> {
-		const { id, variant } = this.plugin.markdown.splitKey(key);
-		return this.plugin.price.refreshPrice(id, variant);
-	}
-
-	private async refreshKeys(
-		keys: CardKey[]
+	/**
+	 * Fetch the market (NM) price once per printing (`id:variant`) of the
+	 * raw rows; graded rows have no automatic price, so they need none.
+	 */
+	private async marketPrices(
+		entries: CollectionEntry[]
 	): Promise<Map<CardKey, number | undefined>> {
+		const md = this.plugin.markdown;
 		const map = new Map<CardKey, number | undefined>();
-		for (const key of keys) {
-			map.set(key, await this.refreshKey(key));
+		for (const e of entries) {
+			if (e.grade || !e.id) continue;
+			const pk = md.printingKey(e);
+			if (map.has(pk)) continue;
+			map.set(pk, await this.plugin.price.refreshPrice(e.id, String(e.variant)));
 		}
 		return map;
 	}
-}
 
-function uniqueKeys(entries: CollectionEntry[]): CardKey[] {
-	return [...new Set(entries.map((e) => e.key))];
+	/**
+	 * New row prices: raw = market × condition multiplier; graded rows and
+	 * rows without a market price keep their current (manual) price.
+	 */
+	private applyPrices(
+		entries: CollectionEntry[],
+		market: Map<CardKey, number | undefined>,
+		only?: (e: CollectionEntry) => boolean
+	): CollectionEntry[] {
+		const md = this.plugin.markdown;
+		return entries.map((e) => {
+			if (e.grade || (only && !only(e))) return e;
+			const price = this.plugin.price.rowPrice(
+				market.get(md.printingKey(e)),
+				e.condition,
+				e.grade
+			);
+			return price === undefined ? e : { ...e, price };
+		});
+	}
 }

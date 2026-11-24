@@ -4,6 +4,7 @@ import type { CollectionEntry } from "../types";
 import { CardmarketProvider } from "../services/PriceService";
 import { buildEntryFromCard } from "./buildEntry";
 import { baseType, resolveVariant, variantOptions } from "../variants";
+import { extractConditionGrade } from "../condition";
 
 export interface BulkItem {
 	entry: CollectionEntry;
@@ -20,13 +21,18 @@ export interface BulkLine {
 	num: string;
 	qty?: number;
 	variant?: string;
+	/** Condition token (NM, LP, MP, HP, DMG). */
+	condition?: string;
+	/** Grade token, normalized ("PSA 10"). */
+	grade?: string;
 }
 
 /** Why a line could not be added. */
 type Failure = { line: string; reason: string };
 
 /**
- * Parse `CODE NUMBER [xQTY] [variant]`. Accepts "DRI 062", "dri-062",
+ * Parse `CODE NUMBER [xQTY] [variant] [COND] [GRADE]`, e.g. `DRI 062 x2
+ * reverse LP` or `sv10-021 PSA10`. Accepts "DRI 062", "dri-062",
  * "DRI062", "sv10-021"; quantity as "x2", "2x" or "×2" anywhere after the
  * number. Returns null for anything else.
  */
@@ -42,7 +48,16 @@ export function parseBulkLine(line: string): BulkLine | null {
 		qty = Number.parseInt(qm[1] ?? qm[2], 10);
 		rest = (rest.slice(0, qm.index) + rest.slice((qm.index ?? 0) + qm[0].length)).trim();
 	}
-	return { code: m[1], num: m[2], qty, variant: rest || undefined };
+	const cg = extractConditionGrade(rest);
+	rest = cg.rest;
+	return {
+		code: m[1],
+		num: m[2],
+		qty,
+		variant: rest || undefined,
+		condition: cg.condition,
+		grade: cg.grade,
+	};
 }
 
 /**
@@ -72,7 +87,7 @@ export class BulkAddModal extends Modal {
 		contentEl.createEl("h2", { text: "Bulk add cards" });
 		contentEl.createEl("p", {
 			cls: "pokemon-collection-hint",
-			text: "One card per line: CODE NUMBER [xQTY] [variant], e.g. DRI 062 x2 reverse. Lines starting with # are ignored.",
+			text: "One card per line: CODE NUMBER [xQTY] [variant] [condition] [grade], e.g. DRI 062 x2 reverse LP or PAF 091 holo PSA10. Condition defaults to NM; graded cards get no automatic price. Lines starting with # are ignored.",
 		});
 
 		const ta = contentEl.createEl("textarea", {
@@ -80,7 +95,7 @@ export class BulkAddModal extends Modal {
 		});
 		this.textarea = ta;
 		ta.rows = 8;
-		ta.placeholder = "DRI 062 x2 reverse\nsv10-021\nPAF 091 holo";
+		ta.placeholder = "DRI 062 x2 reverse\nsv10-021 LP\nPAF 091 holo PSA10";
 		ta.addEventListener("input", () => (this.text = ta.value));
 
 		const status = contentEl.createDiv({ cls: "pokemon-collection-hint" });
@@ -187,14 +202,21 @@ export class BulkAddModal extends Modal {
 				? `variant "${p.variant}" not listed for ${card.name} — added as custom`
 				: undefined;
 		const qty = p.qty && p.qty > 0 ? p.qty : this.plugin.settings.defaultQuantity;
-		const price = this.provider.priceFor(card, variant);
+		// Raw: market × condition multiplier; graded: no automatic price.
+		const price = this.plugin.price.rowPrice(
+			this.provider.priceFor(card, variant),
+			p.condition,
+			p.grade
+		);
 		const entry = await buildEntryFromCard(
 			this.plugin,
 			card,
 			variant,
 			lang,
 			qty,
-			price
+			price,
+			undefined,
+			{ condition: p.condition, grade: p.grade }
 		);
 		return { entry, qty, warning };
 	}

@@ -4,6 +4,13 @@ import type { TcgdexCardFull } from "../types";
 import { defaultVariant, variantOptions, VariantOption } from "../variants";
 import { CardmarketProvider } from "../services/PriceService";
 import { buildEntryFromCard } from "./buildEntry";
+import {
+	Condition,
+	CONDITION_LABELS,
+	CONDITIONS,
+	DEFAULT_CONDITION,
+	normalizeGrade,
+} from "../condition";
 import type { AddCardCallback } from "./CardSearchModal";
 
 const CUSTOM = "__custom__";
@@ -24,6 +31,9 @@ export class VariantSelectorModal extends Modal {
 	private lang: string;
 	private quantity: number;
 	private price: number | undefined;
+	private condition: Condition = DEFAULT_CONDITION;
+	private grade = "";
+	private priceSetting?: Setting;
 
 	private provider = new CardmarketProvider();
 	private options: VariantOption[];
@@ -51,9 +61,16 @@ export class VariantSelectorModal extends Modal {
 		this.price = this.priceForValue(this.selectedVariant);
 	}
 
-	/** Market price for a variant value (its own detailed pricing first). */
+	/**
+	 * Row price for a variant value: market (its own detailed pricing first)
+	 * × condition multiplier; none for graded cards (priced by hand).
+	 */
 	private priceForValue(value: string): number | undefined {
-		return this.provider.priceFor(this.card, value);
+		return this.plugin.price.rowPrice(
+			this.provider.priceFor(this.card, value),
+			this.condition,
+			normalizeGrade(this.grade)
+		);
 	}
 
 	onOpen(): void {
@@ -126,6 +143,27 @@ export class VariantSelectorModal extends Modal {
 			});
 		this.toggleCustom(this.selectedVariant === CUSTOM);
 
+		new Setting(contentEl)
+			.setName("Condition")
+			.setDesc("Raw card condition; the price uses the multiplier from settings.")
+			.addDropdown((dd) => {
+				for (const c of CONDITIONS) dd.addOption(c, `${c} — ${CONDITION_LABELS[c]}`);
+				dd.setValue(this.condition).onChange((v) => {
+					this.condition = v as Condition;
+					this.onVariantChanged();
+				});
+			});
+
+		new Setting(contentEl)
+			.setName("Grade")
+			.setDesc("Leave empty for raw cards, e.g. PSA 10, CGC 9.5, BGS 9.")
+			.addText((t) => {
+				t.setPlaceholder("PSA 10").onChange((v) => {
+					this.grade = v;
+					this.onVariantChanged();
+				});
+			});
+
 		new Setting(contentEl).setName("Language").addText((t) => {
 			t.setValue(this.language).onChange((v) => {
 				this.language = v.trim().toUpperCase() || this.language;
@@ -139,9 +177,9 @@ export class VariantSelectorModal extends Modal {
 			});
 		});
 
-		new Setting(contentEl)
+		this.priceSetting = new Setting(contentEl)
 			.setName("Price (EUR)")
-			.setDesc("Auto-filled per variant from Cardmarket. Editable.")
+			.setDesc(this.priceDesc())
 			.addText((t) => {
 				this.priceComp = t;
 				t.setPlaceholder("0.00")
@@ -170,8 +208,15 @@ export class VariantSelectorModal extends Modal {
 		this.customSetting?.settingEl.toggle(show);
 	}
 
-	/** Re-price when the variant changes, unless the user edited the price. */
+	private priceDesc(): string {
+		return normalizeGrade(this.grade)
+			? "Graded card: no automatic price — enter it by hand. Price updates keep it."
+			: "Auto-filled per variant and condition from Cardmarket. Editable.";
+	}
+
+	/** Re-price when variant/condition/grade change, unless the user edited the price. */
 	private onVariantChanged(): void {
+		this.priceSetting?.setDesc(this.priceDesc());
 		if (this.priceEdited || this.selectedVariant === CUSTOM) return;
 		this.price = this.priceForValue(this.selectedVariant);
 		this.priceComp?.setValue(
@@ -208,11 +253,13 @@ export class VariantSelectorModal extends Modal {
 			this.lang,
 			this.quantity,
 			this.price,
-			this.language
+			this.language,
+			{ condition: this.condition, grade: this.grade }
 		);
 
 		this.onConfirm(entry, this.quantity);
-		new Notice(`Added ${entry.quantity}× ${entry.name} (${variant}).`);
+		const extra = entry.grade ? `, ${entry.grade}` : entry.condition !== "NM" ? `, ${entry.condition}` : "";
+		new Notice(`Added ${entry.quantity}× ${entry.name} (${variant}${extra}).`);
 		this.close();
 	}
 }

@@ -13,10 +13,14 @@ export const LIST_TYPES: ListType[] = ["collection", "wishlist", "trade"];
 /** One card aggregated across every note of the same list type in scope. */
 export interface AggregatedCard {
 	key: CardKey;
+	/** `id:variant` — key of the meta cache and the price history. */
+	printingKey: CardKey;
 	id: string;
 	name: string;
 	setName: string;
 	variant: string;
+	condition: string;
+	grade?: string;
 	language: string;
 	quantity: number;
 	unitPrice: number;
@@ -129,8 +133,9 @@ export class CollectionService {
 
 		for (const { file, list, entries } of await this.scanNotes(lists)) {
 			for (const e of entries) {
-				const meta = this.plugin.cache.getMeta(e.key);
-				const unit = e.price ?? meta?.marketPrice ?? 0;
+				const printingKey = this.plugin.markdown.printingKey(e);
+				const meta = this.plugin.cache.getMeta(printingKey);
+				const unit = this.unitPrice(e, meta?.marketPrice);
 				const agg = `${list}\u0000${e.key}`;
 				const existing = byKey.get(agg);
 				if (existing) {
@@ -143,10 +148,13 @@ export class CollectionService {
 				} else {
 					byKey.set(agg, {
 						key: e.key,
+						printingKey,
 						id: e.id,
 						name: e.name,
 						setName: e.setName || meta?.setName || "Unknown",
 						variant: String(e.variant),
+						condition: e.condition,
+						grade: e.grade,
 						language: e.language,
 						quantity: e.quantity,
 						unitPrice: unit,
@@ -168,8 +176,8 @@ export class CollectionService {
 		const byKey = new Map<CardKey, TradeCandidate>();
 		for (const { file, entries } of await this.scanNotes(["collection"])) {
 			for (const e of entries) {
-				const meta = this.plugin.cache.getMeta(e.key);
-				const unit = e.price ?? meta?.marketPrice ?? 0;
+				const meta = this.plugin.cache.getMeta(this.plugin.markdown.printingKey(e));
+				const unit = this.unitPrice(e, meta?.marketPrice);
 				const c = byKey.get(e.key);
 				if (c) {
 					c.owned += e.quantity;
@@ -196,6 +204,16 @@ export class CollectionService {
 			out.push(c);
 		}
 		return out.sort((a, b) => b.value - a.value);
+	}
+
+	/**
+	 * A row's unit price: its own table price, else (raw cards only) the
+	 * cached market price × condition multiplier. Graded cards without a
+	 * manual price count as 0 — they are never auto-priced.
+	 */
+	private unitPrice(e: CollectionEntry, market: number | undefined): number {
+		if (e.price !== undefined) return e.price;
+		return this.plugin.price.rowPrice(market, e.condition, e.grade) ?? 0;
 	}
 
 	totals(cards: AggregatedCard[]): ListTotals {

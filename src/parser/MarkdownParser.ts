@@ -1,6 +1,14 @@
 import type PokemonCollectionPlugin from "../main";
 import type { CardKey, CollectionEntry, Variant } from "../types";
 import { cardmarketUrl } from "../cardmarket";
+import {
+	conditionRank,
+	DEFAULT_CONDITION,
+	gradeScore,
+	normalizeCondition,
+	normalizeGrade,
+	parseCondition,
+} from "../condition";
 
 /** Fields a collection table can be sorted by. */
 export type SortField =
@@ -9,6 +17,8 @@ export type SortField =
 	| "number"
 	| "variant"
 	| "language"
+	| "condition"
+	| "grade"
 	| "quantity"
 	| "price";
 
@@ -21,6 +31,8 @@ export const SORT_FIELD_LABELS: Record<SortField, string> = {
 	number: "Number",
 	variant: "Variant",
 	language: "Language",
+	condition: "Condition",
+	grade: "Grade",
 	quantity: "Quantity",
 	price: "Price",
 };
@@ -40,6 +52,8 @@ export const BASE_COLUMNS = [
 	"Set",
 	"Number",
 	"Variant",
+	"Cond",
+	"Grade",
 	"Lang",
 	"Qty",
 	"Price",
@@ -55,6 +69,8 @@ type ColField =
 	| "number"
 	| "variant"
 	| "language"
+	| "condition"
+	| "grade"
 	| "quantity"
 	| "price"
 	| "id"
@@ -67,6 +83,9 @@ const HEADER_FIELD: Record<string, ColField> = {
 	number: "number",
 	variant: "variant",
 	lang: "language",
+	cond: "condition",
+	condition: "condition",
+	grade: "grade",
 	qty: "quantity",
 	price: "price",
 	id: "id",
@@ -98,15 +117,39 @@ export class MarkdownParser {
 
 	// --- key + value formatting --------------------------------------------
 
-	keyOf(id: string, variant: Variant): CardKey {
+	/** Row key `id:variant:cond[:grade]` (condition defaults to NM). */
+	keyOf(id: string, variant: Variant, condition?: string, grade?: string): CardKey {
+		const cond = normalizeCondition(condition);
+		const g = normalizeGrade(grade);
+		return g ? `${id}:${variant}:${cond}:${g}` : `${id}:${variant}:${cond}`;
+	}
+
+	/** Printing key `id:variant` (meta cache + price history are keyed by it). */
+	printingKey(key: CardKey | { id: string; variant: Variant }): CardKey {
+		if (typeof key !== "string") return `${key.id}:${key.variant}`;
+		const { id, variant } = this.splitKey(key);
 		return `${id}:${variant}`;
 	}
 
-	/** Split a `id:variant` key on the FIRST colon (variant may contain colons). */
-	splitKey(key: CardKey): { id: string; variant: string } {
-		const idx = key.indexOf(":");
-		if (idx < 0) return { id: key, variant: "normal" };
-		return { id: key.slice(0, idx), variant: key.slice(idx + 1) };
+	/**
+	 * Split a key. The id ends at the first colon; the condition is the last
+	 * part, or the one before the grade. Legacy `id:variant` keys have
+	 * neither and read as NM.
+	 */
+	splitKey(key: CardKey): { id: string; variant: string; condition: string; grade: string } {
+		const parts = key.split(":");
+		const id = parts.shift() ?? "";
+		const isCond = (s: string | undefined): boolean =>
+			!!s && s === s.toUpperCase() && parseCondition(s) === s;
+		let condition: string = DEFAULT_CONDITION;
+		let grade = "";
+		if (parts.length >= 2 && isCond(parts[parts.length - 1])) {
+			condition = parts.pop() as string;
+		} else if (parts.length >= 3 && isCond(parts[parts.length - 2])) {
+			grade = parts.pop() as string;
+			condition = parts.pop() as string;
+		}
+		return { id, variant: parts.join(":") || "normal", condition, grade };
 	}
 
 	formatPrice(price: number | undefined): string {
@@ -198,6 +241,8 @@ export class MarkdownParser {
 		const variantCol = get("variant").trim() || "normal";
 		let id = "";
 		let variant = variantCol;
+		let keyCond: string | undefined;
+		let keyGrade = "";
 
 		const commentKey = rawName.match(KEY_COMMENT)?.[1]?.trim();
 		const legacyId = get("id").trim();
@@ -206,14 +251,24 @@ export class MarkdownParser {
 			const parsed = this.splitKey(rawKey);
 			id = parsed.id;
 			variant = parsed.variant;
+			keyCond = parsed.condition;
+			keyGrade = parsed.grade;
 		} else {
 			id = this.resolveIdByNaturalKey(name, get("setName").trim(), variant);
 		}
 
 		if (!name && !id) return null;
+		// Visible Cond / Grade cells win (they may have been edited by hand);
+		// tables without those columns use the key; legacy keys mean NM.
+		const condition = colMap.includes("condition")
+			? parseCondition(get("condition")) ?? normalizeCondition(keyCond)
+			: normalizeCondition(keyCond);
+		const grade = colMap.includes("grade")
+			? normalizeGrade(get("grade"))
+			: normalizeGrade(keyGrade);
 		const key = id
-			? this.keyOf(id, variant)
-			: this.naturalKey(name, get("setName").trim(), variant);
+			? this.keyOf(id, variant, condition, grade)
+			: this.naturalKey(name, get("setName").trim(), variant, condition, grade);
 
 		const quantity = Math.max(
 			0,
@@ -227,6 +282,8 @@ export class MarkdownParser {
 			number: get("number").trim(),
 			variant,
 			language: get("language").trim() || this.defaultLang(),
+			condition,
+			grade: grade || undefined,
 			quantity,
 			price: this.parsePrice(get("price")),
 			key,
@@ -269,8 +326,34 @@ export class MarkdownParser {
 	}
 
 	/** A stable key for rows whose TCGdex id could not be recovered. */
-	private naturalKey(name: string, setName: string, variant: string): string {
-		return `${setName}|${name}:${variant}`;
+	private naturalKey(
+		name: string,
+		setName: string,
+		variant: string,
+		condition: string,
+		grade: string
+	): string {
+		return this.keyOf(`${setName}|${name}`, variant, condition, grade);
+	}
+
+	/**
+	 * The entry for one table line of `content` (e.g. the row under the
+	 * cursor), parsed with its section's header. Null if it isn't a card row.
+	 */
+	entryAtLine(content: string, line: string): CollectionEntry | null {
+		const section = this.findSection(content);
+		const row = line.trim();
+		if (!section || !row.startsWith("|")) return null;
+		const header = section.inner
+			.split(/\r?\n/)
+			.map((l) => l.trim())
+			.find(
+				(l) =>
+					l.startsWith("|") &&
+					this.splitRow(l).some((c) => c.toLowerCase() === "card")
+			);
+		if (!header || header === row) return null;
+		return this.parseRows(`${header}\n${row}`)[0] ?? null;
 	}
 
 	/** Split a Markdown table row into trimmed cell values (handles `\|`). */
@@ -302,7 +385,7 @@ export class MarkdownParser {
 	private nameCell(e: CollectionEntry): string {
 		const name = this.escape(e.name);
 		const url =
-			this.plugin.cache.getMeta(e.key)?.cardmarketUrl ??
+			this.plugin.cache.getMeta(this.printingKey(e))?.cardmarketUrl ??
 			cardmarketUrl(e.setName, e.name);
 		const link = e.name && url ? `[${name}](${url})` : name;
 		return `${link}<!--k:${e.key}-->`;
@@ -327,7 +410,7 @@ export class MarkdownParser {
 	 * or our own row parser.
 	 */
 	private imageCell(e: CollectionEntry): string {
-		const base = this.plugin.cache.getMeta(e.key)?.image;
+		const base = this.plugin.cache.getMeta(this.printingKey(e))?.image;
 		const url = this.plugin.api.imageUrl(base, "low");
 		if (!url) return "";
 		const width = Math.min(this.plugin.settings.imageSize, MAX_TABLE_IMG_WIDTH);
@@ -341,6 +424,8 @@ export class MarkdownParser {
 			this.escape(e.setName),
 			this.escape(e.number),
 			this.escape(String(e.variant)),
+			this.escape(e.condition || DEFAULT_CONDITION),
+			this.escape(e.grade ?? ""),
 			this.escape(e.language),
 			String(e.quantity),
 			this.formatPrice(e.price),
@@ -379,6 +464,12 @@ export class MarkdownParser {
 				case "price":
 					r = (a.price ?? 0) - (b.price ?? 0);
 					break;
+				case "condition":
+					r = conditionRank(a.condition) - conditionRank(b.condition);
+					break;
+				case "grade":
+					r = gradeScore(a.grade) - gradeScore(b.grade);
+					break;
 				case "number":
 					// Numeric-aware compare so "9" < "10" and "SV107" sorts sanely.
 					r = a.number.localeCompare(b.number, undefined, {
@@ -387,7 +478,7 @@ export class MarkdownParser {
 					});
 					break;
 				default:
-					r = String(a[field]).localeCompare(String(b[field]), undefined, {
+					r = String(a[field] ?? "").localeCompare(String(b[field] ?? ""), undefined, {
 						sensitivity: "base",
 					});
 			}

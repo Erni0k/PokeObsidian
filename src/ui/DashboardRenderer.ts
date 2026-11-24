@@ -39,7 +39,8 @@ export async function renderDashboard(
 		return charts;
 	}
 
-	renderStats(root, stats, wishlist, trade);
+	const graded = plugin.collection.totals(cards.filter((c) => c.grade));
+	renderStats(root, stats, wishlist, trade, graded);
 	if (cards.length) renderCharts(plugin, root, cards, charts);
 	return charts;
 }
@@ -48,7 +49,8 @@ function renderStats(
 	root: HTMLElement,
 	stats: CollectionStats,
 	wishlist: ListTotals,
-	trade: ListTotals
+	trade: ListTotals,
+	graded: ListTotals
 ): void {
 	const grid = root.createDiv({ cls: "pokemon-collection-stats" });
 	const cur = stats.currency === "EUR" ? "€" : "";
@@ -76,6 +78,9 @@ function renderStats(
 		],
 		["Sets owned", String(stats.setsOwned)],
 	];
+	if (graded.unique) {
+		items.push(["Graded", `${cardsWord(graded.cards)} · ${money(graded.value)}`]);
+	}
 	if (wishlist.unique) {
 		items.push(["Wishlist", `${cardsWord(wishlist.cards)} · cost ${money(wishlist.value)}`]);
 	}
@@ -148,6 +153,15 @@ function renderCharts(
 		charts.push(pieChart(canvas, byRarity.labels, byRarity.values));
 	}
 
+	// Collection by condition (graded cards grouped by grading company).
+	const byCondition = groupSum(cards, (c) =>
+		c.grade ? `Graded (${c.grade.split(" ")[0]})` : c.condition || "NM"
+	);
+	if (byCondition.labels.length > 1) {
+		const canvas = chartBlock(root, "Collection by condition");
+		charts.push(pieChart(canvas, byCondition.labels, byCondition.values));
+	}
+
 	// Collection growth (cumulative unique cards by date added).
 	const growth = cumulativeGrowth(cards);
 	if (growth.labels.length) {
@@ -188,7 +202,7 @@ function cardIdentity(
 	row: HTMLElement,
 	c: AggregatedCard
 ): HTMLElement {
-	const open = (): void => new CardHistoryModal(plugin, c.key).open();
+	const open = (): void => new CardHistoryModal(plugin, c.printingKey).open();
 	const url = plugin.api.imageUrl(c.image, "low");
 	if (url) {
 		const img = row.createEl("img", { cls: "pokemon-collection-top-img is-clickable" });
@@ -198,7 +212,7 @@ function cardIdentity(
 	const info = row.createDiv({ cls: "pokemon-collection-top-info" });
 	const name = info.createEl("a", {
 		cls: "pokemon-collection-top-name",
-		text: `${c.name} · ${c.variant}`,
+		text: [c.name, c.variant, stateLabel(c)].filter(Boolean).join(" · "),
 		attr: { title: "Show price history" },
 	});
 	name.onclick = (ev) => {
@@ -206,6 +220,12 @@ function cardIdentity(
 		open();
 	};
 	return info;
+}
+
+/** "PSA 10" for graded, "LP" for non-NM raw cards, "" for NM. */
+function stateLabel(c: AggregatedCard): string {
+	if (c.grade) return c.grade;
+	return c.condition && c.condition !== "NM" ? c.condition : "";
 }
 
 /** "in Note A, Note B" links to the notes a card appears in. */
@@ -254,7 +274,9 @@ function renderMovers(
 		body.empty();
 		const moves: { card: AggregatedCard; move: PriceMove }[] = [];
 		for (const card of cards) {
-			const points = plugin.cache.getCardHistory(card.key);
+			// Graded cards have manual prices only; history is the raw market.
+			if (card.grade) continue;
+			const points = plugin.cache.getCardHistory(card.printingKey);
 			const move =
 				period === "last" ? changeSincePrevious(points) : changeOverDays(points, 30);
 			if (move && move.abs !== 0) moves.push({ card, move });

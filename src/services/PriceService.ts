@@ -6,6 +6,7 @@ import type {
 	TcgdexVariantDetailed,
 } from "../types";
 import { baseType, findDetail } from "../variants";
+import { DEFAULT_CONDITION_MULTIPLIERS, normalizeCondition } from "../condition";
 
 /**
  * A price provider abstracts *where* prices come from. v1 ships only the
@@ -98,6 +99,29 @@ export class PriceService {
 
 	get currency(): string {
 		return this.provider.currency;
+	}
+
+	/** Multiplier for a raw condition (NM = 1). */
+	conditionMultiplier(condition: string | undefined): number {
+		const c = normalizeCondition(condition);
+		const m =
+			this.plugin.settings.conditionMultipliers?.[c] ?? DEFAULT_CONDITION_MULTIPLIERS[c];
+		return Number.isFinite(m) && m >= 0 ? m : 1;
+	}
+
+	/**
+	 * A row's price from the market (NM) price: graded cards have no
+	 * automatic price (undefined → the caller keeps the manual one); raw
+	 * cards get market × condition multiplier, rounded to the cent.
+	 */
+	rowPrice(
+		market: number | undefined,
+		condition: string | undefined,
+		grade: string | undefined
+	): number | undefined {
+		if (grade) return undefined;
+		if (market === undefined) return undefined;
+		return Math.round(market * this.conditionMultiplier(condition) * 100) / 100;
 	}
 
 	/** Per-unit price of a variant from already-fetched card details. */
