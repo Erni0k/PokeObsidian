@@ -540,3 +540,28 @@ a.pokemon-collection-top-name:hover {
 		font-size: 0.85em;
 	}
 }
+
+/* ---- Price source / freshness ---------------------------------------- */
+.pokemon-price-status {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	margin: 0.25rem 0 0.5rem;
+}
+
+.pokemon-price-stale {
+	color: var(--text-warning, var(--color-orange));
+}
+
+td.pokemon-price-stale {
+	text-decoration: underline dotted;
+	text-underline-offset: 3px;
+}
+
+.pokemon-price-warning {
+	margin: 0.5rem 0;
+	padding: 0.5rem 0.75rem;
+	border-radius: var(--radius-s);
+	border-left: 3px solid var(--color-orange);
+	background: var(--background-modifier-hover);
+	font-size: var(--font-ui-small);
+}

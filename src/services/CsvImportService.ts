@@ -1,6 +1,7 @@
 import type PokemonCollectionPlugin from "../main";
 import type { CollectionEntry, TcgdexCardFull } from "../types";
 import { parseCsv } from "../csv";
+import { currencyFromText } from "../currency";
 import { cardmarketUrl, slug } from "../cardmarket";
 import { normalizeCondition, normalizeGrade, parseCondition } from "../condition";
 import { baseType, defaultVariantForCard, resolveVariant, variantOptions } from "../variants";
@@ -22,6 +23,7 @@ export const EXPORT_COLUMNS = [
 	"condition",
 	"grade",
 	"note",
+	"currency",
 ] as const;
 
 /** Fields a CSV column can be mapped to. */
@@ -48,6 +50,7 @@ export const CSV_FIELD_LABELS: Record<CsvField, string> = {
 	grade: "Grade",
 	gradingCompany: "Grading company",
 	note: "Note (target note path)",
+	currency: "Price currency (EUR, USD)",
 	category: "Game / category (non-Pokémon rows skipped)",
 	reverseHolo: "Reverse holo flag (Y/N)",
 	foil: "Foil / holo flag (Y/N)",
@@ -74,6 +77,8 @@ interface Preset {
 	exact?: boolean;
 	/** Default language label when the file has no language column. */
 	defaultLang?: string;
+	/** Currency of the file's prices when it doesn't say (no column/symbol). */
+	currency?: string;
 }
 
 export const PRESETS: Preset[] = [
@@ -81,6 +86,8 @@ export const PRESETS: Preset[] = [
 		id: "ours",
 		label: "Pokémon Collection export",
 		exact: true,
+		// Exports made before price sources existed were all Cardmarket.
+		currency: "EUR",
 		signatures: [["id", "setcode", "variant", "qty", "condition"]],
 		aliases: Object.fromEntries(EXPORT_COLUMNS.map((c) => [c, [c]])),
 	},
@@ -88,6 +95,7 @@ export const PRESETS: Preset[] = [
 		id: "collectr",
 		label: "Collectr",
 		defaultLang: "EN",
+		currency: "USD",
 		signatures: [
 			["product name", "variance"],
 			["product name", "card condition"],
@@ -111,6 +119,7 @@ export const PRESETS: Preset[] = [
 		id: "tcgplayer",
 		label: "TCGplayer",
 		defaultLang: "EN",
+		currency: "USD",
 		signatures: [
 			["tcgplayer id", "product name"],
 			["product line", "product name", "set name"],
@@ -130,6 +139,7 @@ export const PRESETS: Preset[] = [
 	{
 		id: "cardmarket",
 		label: "Cardmarket",
+		currency: "EUR",
 		signatures: [["idproduct", "amount"], ["idproduct", "count"], ["idproduct", "condition"]],
 		aliases: {
 			name: ["english name", "enname", "name", "local name"],
@@ -228,6 +238,8 @@ export interface RowFields {
 	lang: string;
 	qty: number;
 	price?: number;
+	/** Currency of `price`: the file's column, the price's symbol, or the format default. */
+	currency?: string;
 	condition: string;
 	grade: string;
 	note: string;
@@ -366,6 +378,10 @@ export function readRow(
 		lang: langLabel(get("lang"), preset?.defaultLang ?? defaultLang),
 		qty: Number.isFinite(qty) && qty > 0 ? qty : 1,
 		price: parseMoney(get("price")),
+		currency:
+			get("currency").toUpperCase() ||
+			currencyFromText(get("price")) ||
+			preset?.currency,
 		condition: normalizeCondition(cond.condition),
 		grade: normalizeGrade(grade),
 		note: get("note"),
@@ -575,7 +591,7 @@ export class CsvImportService {
 
 		const card = r.card;
 		const variant = exact && f.variantText ? f.variantText : appVariant(card, f.variantText);
-		// Own export: keep its price; other apps: Cardmarket (EUR) price.
+		// Own export: keep its price; other apps: the active price source.
 		const price = exact
 			? f.price
 			: this.plugin.price.rowPrice(this.plugin.price.priceFor(card, variant), f.condition, f.grade);
@@ -598,20 +614,20 @@ export class CsvImportService {
 			number: f.number || built.number,
 			language: f.lang || built.language,
 			price: f.price,
+			currency: f.price !== undefined ? f.currency : undefined,
 			key: md.keyOf(card.id, variant, f.condition, f.grade),
 		};
 	}
 
 	/**
 	 * A hand-made card (like "Add card manually") for an unresolved row.
-	 * `keepId` keeps the row's own id (1:1 restore). The CSV price is kept
-	 * only when it is in EUR (our export, Cardmarket); app exports such as
-	 * Collectr/TCGplayer are in USD.
+	 * `keepId` keeps the row's own id (1:1 restore). The CSV price keeps its
+	 * own currency (USD for Collectr/TCGplayer, EUR for Cardmarket), so it is
+	 * never mixed with prices in the other currency.
 	 */
-	async manualEntry(f: RowFields, presetId: PresetId, keepId?: string): Promise<CollectionEntry> {
+	async manualEntry(f: RowFields, _presetId: PresetId, keepId?: string): Promise<CollectionEntry> {
 		const md = this.plugin.markdown;
-		const eur = presetId === "ours" || presetId === "cardmarket";
-		f = { ...f, price: eur ? f.price : undefined };
+		const currency = f.currency ?? this.plugin.price.currency;
 		const variant = (f.variantText || "normal").replace(/[|:]/g, " ").trim() || "normal";
 		const id = keepId ?? `manual-${slug(f.set)}-${slug(f.name)}-${slug(f.number) || "x"}`;
 		const printing = md.printingKey({ id, variant });
@@ -624,7 +640,7 @@ export class CsvImportService {
 				setName: f.set,
 				setCode: f.setCode,
 				marketPrice: f.grade ? undefined : f.price,
-				currency: "EUR",
+				currency,
 				cardmarketUrl: cardmarketUrl(f.set, f.name),
 				dateAdded: now,
 			});
@@ -640,6 +656,7 @@ export class CsvImportService {
 			grade: f.grade || undefined,
 			quantity: f.qty,
 			price: f.price,
+			currency: f.price !== undefined ? currency : undefined,
 			key: md.keyOf(id, variant, f.condition, f.grade),
 		};
 	}

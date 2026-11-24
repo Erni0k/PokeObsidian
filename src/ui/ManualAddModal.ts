@@ -81,7 +81,7 @@ export class ManualAddModal extends Modal {
 			const n = Number.parseInt(v, 10);
 			this.quantity = Number.isFinite(n) && n > 0 ? n : 1;
 		});
-		this.textRow(contentEl, "Price (EUR)", "", (v) => {
+		this.textRow(contentEl, `Price (${this.plugin.price.currency})`, "", (v) => {
 			this.price = this.plugin.markdown.parsePrice(v);
 		});
 
@@ -134,7 +134,7 @@ export class ManualAddModal extends Modal {
 			setName,
 			setCode: "",
 			marketPrice: market,
-			currency: "EUR",
+			currency: this.plugin.price.currency,
 			cardmarketUrl: cardmarketUrl(setName, name),
 			lastPriceUpdate: market !== undefined ? now : undefined,
 			dateAdded: this.plugin.cache.getMeta(printing)?.dateAdded ?? now,
@@ -151,6 +151,7 @@ export class ManualAddModal extends Modal {
 			grade: grade || undefined,
 			quantity: this.quantity,
 			price: this.price,
+			currency: this.price !== undefined ? this.plugin.price.currency : undefined,
 			key,
 		};
 

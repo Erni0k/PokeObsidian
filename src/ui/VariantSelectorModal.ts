@@ -2,7 +2,6 @@ import { Modal, Notice, Setting, TextComponent } from "obsidian";
 import type PokemonCollectionPlugin from "../main";
 import type { TcgdexCardFull } from "../types";
 import { defaultVariant, variantOptions, VariantOption } from "../variants";
-import { CardmarketProvider } from "../services/PriceService";
 import { buildEntryFromCard } from "./buildEntry";
 import {
 	Condition,
@@ -35,7 +34,6 @@ export class VariantSelectorModal extends Modal {
 	private grade = "";
 	private priceSetting?: Setting;
 
-	private provider = new CardmarketProvider();
 	private options: VariantOption[];
 	private priceComp?: TextComponent;
 	private priceEdited = false;
@@ -67,7 +65,7 @@ export class VariantSelectorModal extends Modal {
 	 */
 	private priceForValue(value: string): number | undefined {
 		return this.plugin.price.rowPrice(
-			this.provider.priceFor(this.card, value),
+			this.plugin.price.priceFor(this.card, value),
 			this.condition,
 			normalizeGrade(this.grade)
 		);
@@ -178,7 +176,7 @@ export class VariantSelectorModal extends Modal {
 		});
 
 		this.priceSetting = new Setting(contentEl)
-			.setName("Price (EUR)")
+			.setName(`Price (${this.plugin.price.currency})`)
 			.setDesc(this.priceDesc())
 			.addText((t) => {
 				this.priceComp = t;
@@ -211,7 +209,7 @@ export class VariantSelectorModal extends Modal {
 	private priceDesc(): string {
 		return normalizeGrade(this.grade)
 			? "Graded card: no automatic price — enter it by hand. Price updates keep it."
-			: "Auto-filled per variant and condition from Cardmarket. Editable.";
+			: `Auto-filled per variant and condition from ${this.plugin.price.sourceLabel}. Editable.`;
 	}
 
 	/** Re-price when variant/condition/grade change, unless the user edited the price. */

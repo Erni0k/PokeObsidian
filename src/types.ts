@@ -66,6 +66,11 @@ export interface CollectionEntry {
 	 * cards are priced by hand only (never overwritten by price updates).
 	 */
 	price?: number;
+	/**
+	 * Currency of `price` ("EUR", "USD"), read from the Price cell's symbol.
+	 * Undefined = the active price source's currency.
+	 */
+	currency?: string;
 	/** Row identity `id:variant:cond[:grade]`. */
 	key: CardKey;
 }
@@ -117,6 +122,8 @@ export interface ValueSnapshot {
 export interface PricePoint {
 	t: string;
 	p: number;
+	/** Currency of `p` (absent on points recorded before sources existed = EUR). */
+	c?: string;
 }
 
 /**
@@ -202,10 +209,32 @@ export interface TcgdexVariants {
 	wPromo?: boolean;
 }
 
-/** Pricing block; we consume cardmarket.trend (EUR). */
+/** Pricing block: Cardmarket (EUR) and TCGplayer (USD). */
 export interface TcgdexPricing {
 	cardmarket?: TcgdexMarketPricing;
-	tcgplayer?: Record<string, unknown>;
+	/** `null` on printings TCGplayer doesn't price (e.g. shadowless). */
+	tcgplayer?: TcgplayerPricing | null;
+}
+
+/** One TCGplayer printing price ("normal", "reverse-holofoil", "holofoil", …). */
+export interface TcgplayerPrice {
+	productId?: number;
+	lowPrice?: number | null;
+	midPrice?: number | null;
+	highPrice?: number | null;
+	marketPrice?: number | null;
+	directLowPrice?: number | null;
+}
+
+/**
+ * TCGdex `pricing.tcgplayer`: `unit` ("USD"), `updated`, plus one entry per
+ * printing keyed like "normal", "reverse-holofoil", "holofoil",
+ * "1st-edition-holofoil", "unlimited-holofoil", "1st-edition-normal".
+ */
+export interface TcgplayerPricing {
+	unit?: string;
+	updated?: string;
+	[printing: string]: TcgplayerPrice | string | undefined;
 }
 
 export interface TcgdexMarketPricing {

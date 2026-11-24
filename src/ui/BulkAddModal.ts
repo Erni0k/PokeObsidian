@@ -1,7 +1,6 @@
 import { ButtonComponent, Modal, Setting } from "obsidian";
 import type PokemonCollectionPlugin from "../main";
 import type { CollectionEntry } from "../types";
-import { CardmarketProvider } from "../services/PriceService";
 import { buildEntryFromCard } from "./buildEntry";
 import { baseType, resolveVariant, variantOptions } from "../variants";
 import { extractConditionGrade } from "../condition";
@@ -69,7 +68,6 @@ export class BulkAddModal extends Modal {
 	private plugin: PokemonCollectionPlugin;
 	private onResolved: BulkResolvedCallback;
 	private text = "";
-	private provider = new CardmarketProvider();
 	private textarea!: HTMLTextAreaElement;
 	private addButton?: ButtonComponent;
 	private busy = false;
@@ -204,7 +202,7 @@ export class BulkAddModal extends Modal {
 		const qty = p.qty && p.qty > 0 ? p.qty : this.plugin.settings.defaultQuantity;
 		// Raw: market × condition multiplier; graded: no automatic price.
 		const price = this.plugin.price.rowPrice(
-			this.provider.priceFor(card, variant),
+			this.plugin.price.priceFor(card, variant),
 			p.condition,
 			p.grade
 		);

@@ -1,4 +1,4 @@
-import { App, PluginSettingTab, Setting } from "obsidian";
+import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type PokemonCollectionPlugin from "./main";
 import {
 	SORT_FIELD_LABELS,
@@ -31,15 +31,17 @@ export const SUPPORTED_LANGUAGES = [
 	"th",
 ] as const;
 
-export type PriceProvider = "tcgdex-cardmarket";
+export type PriceProvider = "tcgdex-cardmarket" | "tcgdex-tcgplayer";
 
 export interface PokemonCollectionSettings {
 	/** Language used for all TCGdex API calls. */
 	preferredLanguage: string;
-	/** Display currency. Fixed to EUR in v1 (Cardmarket source). */
+	/** Currency of the price source (kept in sync; EUR or USD). */
 	preferredCurrency: string;
-	/** Price data provider. Only TCGdex/Cardmarket in v1. */
+	/** Price source: Cardmarket (EUR) or TCGplayer (USD), both via TCGdex. */
 	priceProvider: PriceProvider;
+	/** Prices older than this many days are highlighted as stale. */
+	stalePriceDays: number;
 	/** Auto-update interval in minutes. 0 = disabled (manual only). */
 	autoUpdateIntervalMinutes: number;
 	/** How long cached API responses stay fresh, in hours. */
@@ -72,6 +74,7 @@ export const DEFAULT_SETTINGS: PokemonCollectionSettings = {
 	preferredLanguage: "en",
 	preferredCurrency: "EUR",
 	priceProvider: "tcgdex-cardmarket",
+	stalePriceDays: 7,
 	autoUpdateIntervalMinutes: 0,
 	cacheDurationHours: 24,
 	setsListTtlHours: 6,
@@ -117,27 +120,40 @@ export class PokemonCollectionSettingTab extends PluginSettingTab {
 			});
 
 		new Setting(containerEl)
-			.setName("Currency")
+			.setName("Price source")
 			.setDesc(
-				"Display currency. v1 sources prices from Cardmarket (EUR) only."
+				"Where market prices come from. The currency follows the source. After switching, run \"Update all collection prices\" to re-price your tables — until then, cards still priced in the old currency are kept apart (never added to the new currency)."
 			)
-			.addText((text) => {
-				text.setValue(this.plugin.settings.preferredCurrency).setDisabled(
-					true
+			.addDropdown((dd) => {
+				dd.addOption("tcgdex-cardmarket", "Cardmarket (EUR)");
+				dd.addOption("tcgdex-tcgplayer", "TCGplayer (USD)");
+				dd.setValue(this.plugin.settings.priceProvider).onChange(
+					async (value) => {
+						const prev = this.plugin.settings.priceProvider;
+						this.plugin.settings.priceProvider = value as PriceProvider;
+						this.plugin.settings.preferredCurrency = this.plugin.price.currency;
+						await this.plugin.saveSettings();
+						if (prev !== value) {
+							new Notice(
+								`Price source: ${this.plugin.price.sourceLabel} (${this.plugin.price.currency}). Run "Update all collection prices" to re-price your tables.`,
+								10000
+							);
+						}
+					}
 				);
 			});
 
 		new Setting(containerEl)
-			.setName("Price provider")
-			.setDesc("Source of market prices.")
-			.addDropdown((dd) => {
-				dd.addOption("tcgdex-cardmarket", "TCGdex — Cardmarket (EUR)");
-				dd.setValue(this.plugin.settings.priceProvider).onChange(
-					async (value) => {
-						this.plugin.settings.priceProvider = value as PriceProvider;
+			.setName("Stale price after (days)")
+			.setDesc("Prices not updated for longer are highlighted in tables and the dashboard.")
+			.addText((text) => {
+				text
+					.setValue(String(this.plugin.settings.stalePriceDays))
+					.onChange(async (value) => {
+						const n = Number.parseFloat(value);
+						this.plugin.settings.stalePriceDays = Number.isFinite(n) && n > 0 ? n : 7;
 						await this.plugin.saveSettings();
-					}
-				);
+					});
 			});
 
 		new Setting(containerEl)
@@ -277,7 +293,7 @@ export class PokemonCollectionSettingTab extends PluginSettingTab {
 		containerEl.createEl("h3", { text: "Condition pricing" });
 		containerEl.createEl("p", {
 			cls: "setting-item-description",
-			text: "Raw cards are priced as Cardmarket price × multiplier for their condition. Graded cards (with a Grade) are never auto-priced — enter their price by hand; price updates keep it.",
+			text: "Raw cards are priced as the market price (from the price source) × multiplier for their condition. Graded cards (with a Grade) are never auto-priced — enter their price by hand; price updates keep it.",
 		});
 		for (const cond of CONDITIONS) {
 			if (cond === "NM") continue;

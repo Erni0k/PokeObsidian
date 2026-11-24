@@ -17,6 +17,7 @@ import type { ListType, TradeCandidate } from "./services/CollectionService";
 import { CsvImportModal, ExportScopeModal, ImportOutcome, ImportPlan } from "./ui/CsvModals";
 import { EXPORT_COLUMNS, readTable } from "./services/CsvImportService";
 import { toCsv } from "./csv";
+import { formatMoney } from "./currency";
 import type { CardSearchQuery } from "./services/ApiService";
 
 /** Registers all plugin commands and holds their implementations. */
@@ -430,6 +431,7 @@ export class CommandController {
 					e.condition,
 					e.grade ?? "",
 					file.path,
+					e.price !== undefined ? e.currency ?? this.plugin.price.currency : "",
 				]);
 			}
 		}
@@ -806,6 +808,8 @@ export class CommandController {
 		// Second pass: rewrite each note and tally the portfolio value.
 		let totalValue = 0;
 		let totalCards = 0;
+		let otherCurrency = 0;
+		const cur = this.plugin.price.currency;
 		const uniq = new Set<CardKey>();
 
 		for (const note of notes) {
@@ -818,7 +822,13 @@ export class CommandController {
 			// but the portfolio value counts only what you own.
 			if (this.plugin.collection.listTypeOf(note.file) !== "collection") continue;
 			for (const e of updated) {
-				totalValue += e.quantity * (e.price ?? 0);
+				// Never add two currencies: a graded card's manual price in
+				// the old currency stays out of the total until re-entered.
+				if (e.price !== undefined && (e.currency ?? cur) !== cur) {
+					otherCurrency++;
+				} else {
+					totalValue += e.quantity * (e.price ?? 0);
+				}
 				totalCards += e.quantity;
 				uniq.add(e.key);
 			}
@@ -829,14 +839,16 @@ export class CommandController {
 			totalValue,
 			totalCards,
 			uniqueCards: uniq.size,
-			currency: this.plugin.price.currency,
+			currency: cur,
 		});
 
 		notice.hide();
 		new Notice(
-			`Updated ${printings.size} cards. Collection value: €${totalValue.toFixed(
-				2
-			)}.`
+			`Updated ${printings.size} cards. Collection value: ${formatMoney(totalValue, cur)}.` +
+				(otherCurrency
+					? ` ${otherCurrency} row(s) keep a price in another currency (manual/graded) and are not counted.`
+					: ""),
+			otherCurrency ? 10000 : 5000
 		);
 	}
 
@@ -877,7 +889,7 @@ export class CommandController {
 				e.condition,
 				e.grade
 			);
-			return price === undefined ? e : { ...e, price };
+			return price === undefined ? e : { ...e, price, currency: this.plugin.price.currency };
 		});
 	}
 }

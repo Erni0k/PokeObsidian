@@ -1,6 +1,6 @@
 import { TFile } from "obsidian";
 import type PokemonCollectionPlugin from "../main";
-import type { CardKey, CollectionEntry } from "../types";
+import type { CachedCardMeta, CardKey, CollectionEntry } from "../types";
 
 /**
  * What a note's table means, from its frontmatter `pokemon-list:`.
@@ -26,6 +26,10 @@ export interface AggregatedCard {
 	language: string;
 	quantity: number;
 	unitPrice: number;
+	/** Currency of `unitPrice` (the row's own, or the cached market price's). */
+	currency: string;
+	/** When the market price was last fetched (meta cache), if ever. */
+	lastPriceUpdate?: string;
 	rarity: string;
 	/** Which kind of list the card was found in. */
 	list: ListType;
@@ -54,11 +58,13 @@ export interface CollectionStats {
 	currency: string;
 }
 
-/** Count + value of a list (Σ qty, Σ qty × price). */
+/** Count + value of a list (Σ qty, Σ qty × price in the active currency). */
 export interface ListTotals {
 	cards: number;
 	unique: number;
 	value: number;
+	/** Cards priced in other currencies, per currency (not in `value`). */
+	other: Record<string, { cards: number; value: number }>;
 }
 
 /** A collection card owned more than once: the copies beyond one can be traded. */
@@ -68,6 +74,7 @@ export interface TradeCandidate {
 	owned: number;
 	surplus: number;
 	unitPrice: number;
+	currency: string;
 	/** surplus × unitPrice. */
 	value: number;
 	image?: string;
@@ -151,13 +158,16 @@ export class CollectionService {
 			for (const e of entries) {
 				const printingKey = this.plugin.markdown.printingKey(e);
 				const meta = this.plugin.cache.getMeta(printingKey);
-				const unit = this.unitPrice(e, meta?.marketPrice);
+				const { value: unit, currency } = this.priceOf(e, meta);
 				const agg = `${list}\u0000${e.key}`;
 				const existing = byKey.get(agg);
 				if (existing) {
 					existing.quantity += e.quantity;
 					// Prefer a non-zero price if we have one.
-					if (!existing.unitPrice && unit) existing.unitPrice = unit;
+					if (!existing.unitPrice && unit) {
+						existing.unitPrice = unit;
+						existing.currency = currency;
+					}
 					if (!existing.notePaths.includes(file.path)) {
 						existing.notePaths.push(file.path);
 					}
@@ -175,6 +185,8 @@ export class CollectionService {
 						language: e.language,
 						quantity: e.quantity,
 						unitPrice: unit,
+						currency,
+						lastPriceUpdate: meta?.lastPriceUpdate,
 						rarity: meta?.rarity ?? "Unknown",
 						list,
 						dateAdded: meta?.dateAdded,
@@ -194,11 +206,14 @@ export class CollectionService {
 		for (const { file, entries } of await this.scanNotes(["collection"])) {
 			for (const e of entries) {
 				const meta = this.plugin.cache.getMeta(this.plugin.markdown.printingKey(e));
-				const unit = this.unitPrice(e, meta?.marketPrice);
+				const { value: unit, currency } = this.priceOf(e, meta);
 				const c = byKey.get(e.key);
 				if (c) {
 					c.owned += e.quantity;
-					if (!c.unitPrice && unit) c.unitPrice = unit;
+					if (!c.unitPrice && unit) {
+						c.unitPrice = unit;
+						c.currency = currency;
+					}
 					if (!c.notePaths.includes(file.path)) c.notePaths.push(file.path);
 				} else {
 					byKey.set(e.key, {
@@ -206,6 +221,7 @@ export class CollectionService {
 						owned: e.quantity,
 						surplus: 0,
 						unitPrice: unit,
+						currency,
 						value: 0,
 						image: meta?.image,
 						notePaths: [file.path],
@@ -224,36 +240,62 @@ export class CollectionService {
 	}
 
 	/**
-	 * A row's unit price: its own table price, else (raw cards only) the
-	 * cached market price × condition multiplier. Graded cards without a
-	 * manual price count as 0 — they are never auto-priced.
+	 * A row's unit price and its currency: its own table price (currency from
+	 * the cell's symbol), else (raw cards only) the cached market price ×
+	 * condition multiplier, in the currency it was fetched in. Graded cards
+	 * without a manual price count as 0 — they are never auto-priced.
 	 */
-	private unitPrice(e: CollectionEntry, market: number | undefined): number {
-		if (e.price !== undefined) return e.price;
-		return this.plugin.price.rowPrice(market, e.condition, e.grade) ?? 0;
+	private priceOf(
+		e: CollectionEntry,
+		meta: CachedCardMeta | undefined
+	): { value: number; currency: string } {
+		const cur = this.plugin.price.currency;
+		if (e.price !== undefined) return { value: e.price, currency: e.currency ?? cur };
+		const v = this.plugin.price.rowPrice(meta?.marketPrice, e.condition, e.grade);
+		return { value: v ?? 0, currency: v !== undefined ? meta?.currency ?? "EUR" : cur };
 	}
 
+	/** Whether a card's price can be added to totals in the active currency. */
+	inActiveCurrency(c: { unitPrice: number; currency: string }): boolean {
+		return !c.unitPrice || c.currency === this.plugin.price.currency;
+	}
+
+	/**
+	 * Count + value in the active currency. Cards priced in another currency
+	 * (before "Update all prices" after a source switch, or manual prices)
+	 * are counted but their value is reported apart, never added.
+	 */
 	totals(cards: AggregatedCard[]): ListTotals {
 		let count = 0;
 		let value = 0;
+		const other: Record<string, { cards: number; value: number }> = {};
 		for (const c of cards) {
 			count += c.quantity;
-			value += c.quantity * c.unitPrice;
+			if (this.inActiveCurrency(c)) value += c.quantity * c.unitPrice;
+			else {
+				const o = (other[c.currency] ??= { cards: 0, value: 0 });
+				o.cards += c.quantity;
+				o.value += c.quantity * c.unitPrice;
+			}
 		}
-		return { cards: count, unique: cards.length, value };
+		return { cards: count, unique: cards.length, value, other };
 	}
 
 	computeStats(cards: AggregatedCard[]): CollectionStats {
 		let totalCards = 0;
 		let totalValue = 0;
+		let pricedCards = 0;
 		let mostExpensive: AggregatedCard | undefined;
 		const setCounts = new Map<string, number>();
 
 		for (const c of cards) {
 			totalCards += c.quantity;
-			totalValue += c.quantity * c.unitPrice;
-			if (!mostExpensive || c.unitPrice > mostExpensive.unitPrice) {
-				mostExpensive = c;
+			if (this.inActiveCurrency(c)) {
+				pricedCards += c.quantity;
+				totalValue += c.quantity * c.unitPrice;
+				if (!mostExpensive || c.unitPrice > mostExpensive.unitPrice) {
+					mostExpensive = c;
+				}
 			}
 			setCounts.set(
 				c.setName,
@@ -272,7 +314,7 @@ export class CollectionService {
 			totalCards,
 			uniqueCards: cards.length,
 			totalValue,
-			averageValue: totalCards ? totalValue / totalCards : 0,
+			averageValue: pricedCards ? totalValue / pricedCards : 0,
 			mostExpensive,
 			largestSet,
 			setsOwned: setCounts.size,

@@ -1,6 +1,7 @@
 import { App, FuzzySuggestModal, Modal, Notice, Setting, TFile } from "obsidian";
 import type PokemonCollectionPlugin from "../main";
 import type { ListType, TradeCandidate } from "../services/CollectionService";
+import { formatMoney } from "../currency";
 
 /** Pick one note out of a list (fuzzy search by path). */
 export class NotePickerModal extends FuzzySuggestModal<TFile> {
@@ -48,14 +49,15 @@ export class TradeCandidatesModal extends Modal {
 		const { contentEl } = this;
 		contentEl.addClass("pokemon-collection-modal");
 		contentEl.createEl("h3", { text: "Trade candidates" });
-		const cur = this.plugin.price.currency === "EUR" ? "€" : "";
-		const money = (n: number): string => `${cur}${n.toFixed(2)}`;
-
+		const code = this.plugin.price.currency;
 		const surplus = this.candidates.reduce((s, c) => s + c.surplus, 0);
-		const value = this.candidates.reduce((s, c) => s + c.value, 0);
+		// Only same-currency values are added up.
+		const value = this.candidates
+			.filter((c) => this.plugin.collection.inActiveCurrency(c))
+			.reduce((s, c) => s + c.value, 0);
 		contentEl.createDiv({
 			cls: "pokemon-set-summary",
-			text: `${this.candidates.length} card(s) owned more than once · ${surplus} spare cop${surplus === 1 ? "y" : "ies"} worth ${money(value)}`,
+			text: `${this.candidates.length} card(s) owned more than once · ${surplus} spare cop${surplus === 1 ? "y" : "ies"} worth ${formatMoney(value, code)}`,
 		});
 
 		const wrap = contentEl.createDiv({ cls: "pokemon-collection-results" });
@@ -79,8 +81,8 @@ export class TradeCandidatesModal extends Modal {
 			tr.createEl("td", { text: String(c.entry.variant) });
 			tr.createEl("td", { text: String(c.owned) });
 			tr.createEl("td", { text: String(c.surplus) });
-			tr.createEl("td", { cls: "pokemon-set-price", text: c.unitPrice ? money(c.unitPrice) : "—" });
-			tr.createEl("td", { cls: "pokemon-set-price", text: c.unitPrice ? money(c.value) : "—" });
+			tr.createEl("td", { cls: "pokemon-set-price", text: c.unitPrice ? formatMoney(c.unitPrice, c.currency) : "—" });
+			tr.createEl("td", { cls: "pokemon-set-price", text: c.unitPrice ? formatMoney(c.value, c.currency) : "—" });
 		}
 
 		new Setting(contentEl)

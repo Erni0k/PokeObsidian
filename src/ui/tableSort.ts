@@ -1,6 +1,7 @@
 import { MarkdownPostProcessorContext, Notice, TFile } from "obsidian";
 import type PokemonCollectionPlugin from "../main";
 import type { SortDirection, SortField } from "../parser/MarkdownParser";
+import { isStale, timeAgo } from "../currency";
 
 /** Map a header label (lowercased) to a sortable field. */
 const FIELD_BY_HEADER: Record<string, SortField> = {
@@ -77,6 +78,53 @@ function enhanceTable(
 			ev.preventDefault();
 			void applySort(plugin, sourcePath, field);
 		});
+	});
+
+	void annotatePrices(plugin, table, sourcePath, labels);
+}
+
+/**
+ * Price-cell tooltips in Reading view: "Cardmarket price · updated 3 days
+ * ago". Stale prices (older than the setting) and prices in another currency
+ * than the active source are highlighted. Rows are matched to the note's
+ * parsed entries by position, checked against the card name.
+ */
+async function annotatePrices(
+	plugin: PokemonCollectionPlugin,
+	table: HTMLTableElement,
+	sourcePath: string,
+	labels: string[]
+): Promise<void> {
+	const priceIdx = labels.indexOf("price");
+	const cardIdx = labels.indexOf("card");
+	const file = plugin.app.vault.getAbstractFileByPath(sourcePath);
+	if (priceIdx < 0 || !(file instanceof TFile)) return;
+	const entries = plugin.markdown.parseEntries(await plugin.app.vault.cachedRead(file));
+	const rows = Array.from(table.querySelectorAll<HTMLTableRowElement>("tbody tr"));
+	const days = plugin.settings.stalePriceDays;
+	const cur = plugin.price.currency;
+
+	rows.forEach((row, i) => {
+		const e = entries[i];
+		const cell = row.cells[priceIdx];
+		if (!e || !cell || e.price === undefined) return;
+		const shown = (row.cells[cardIdx]?.textContent ?? "").trim();
+		if (shown && e.name && shown !== e.name) return; // table and note out of sync
+		const parts: string[] = [];
+		let flag = false;
+		if (e.grade) {
+			parts.push(`Manual price (graded ${e.grade})`);
+		} else {
+			const updated = plugin.cache.getMeta(plugin.markdown.printingKey(e))?.lastPriceUpdate;
+			parts.push(`${plugin.price.sourceLabel} price`, updated ? `updated ${timeAgo(updated)}` : "never updated");
+			if (isStale(updated, days)) flag = true;
+		}
+		if ((e.currency ?? cur) !== cur) {
+			parts.push(`in ${e.currency} — run "Update all collection prices" to re-price in ${cur}`);
+			flag = true;
+		}
+		cell.title = parts.join(" · ");
+		cell.toggleClass("pokemon-price-stale", flag);
 	});
 }
 

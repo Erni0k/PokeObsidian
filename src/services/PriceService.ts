@@ -4,17 +4,19 @@ import type {
 	TcgdexCardFull,
 	TcgdexMarketPricing,
 	TcgdexVariantDetailed,
+	TcgplayerPrice,
 } from "../types";
+import { currencySymbol } from "../currency";
 import { baseType, findDetail } from "../variants";
 import { DEFAULT_CONDITION_MULTIPLIERS, normalizeCondition } from "../condition";
 
 /**
- * A price provider abstracts *where* prices come from. v1 ships only the
- * TCGdex/Cardmarket provider, but the interface lets us add pokemontcg.io or
- * others later without touching callers.
+ * A price provider abstracts *where* prices come from: Cardmarket (EUR) or
+ * TCGplayer (USD), both read from the TCGdex card's `pricing` block.
  */
 export interface PriceProvider {
-	readonly id: string;
+	readonly id: PriceSourceId;
+	readonly label: string;
 	readonly currency: string;
 	/** Per-unit market price for a specific variant of a card, if present. */
 	priceFor(card: TcgdexCardFull, variant: string): number | undefined;
@@ -33,7 +35,8 @@ export interface PriceProvider {
  * Order: trend → avg30 → avg → low, falling back to the other set if empty.
  */
 export class CardmarketProvider implements PriceProvider {
-	readonly id = "tcgdex-cardmarket";
+	readonly id = "tcgdex-cardmarket" as const;
+	readonly label = "Cardmarket";
 	readonly currency = "EUR";
 
 	priceFor(card: TcgdexCardFull, variant: string): number | undefined {
@@ -88,17 +91,98 @@ export class CardmarketProvider implements PriceProvider {
 	}
 }
 
+/**
+ * Reads TCGplayer prices (USD) from TCGdex `pricing.tcgplayer`, which has one
+ * entry per printing: "normal", "reverse-holofoil", "holofoil", and for old
+ * sets "1st-edition-holofoil" / "unlimited-holofoil" (and the "-normal"
+ * pair). Field order: marketPrice → midPrice → lowPrice.
+ *
+ * A detailed printing's own `pricing.tcgplayer` wins; `null` there means
+ * TCGplayer doesn't price that printing (e.g. shadowless) → no price, rather
+ * than borrowing the unlimited one. A 1st Edition is only ever priced from a
+ * "1st-edition-*" entry.
+ */
+export class TcgplayerProvider implements PriceProvider {
+	readonly id = "tcgdex-tcgplayer" as const;
+	readonly label = "TCGplayer";
+	readonly currency = "USD";
+
+	priceFor(card: TcgdexCardFull, variant: string): number | undefined {
+		const detail = findDetail(card, variant);
+		const own = detail?.pricing?.tcgplayer;
+		if (detail?.pricing && own === null) return undefined;
+		const tp = own ?? card.pricing?.tcgplayer ?? undefined;
+		if (!tp) return undefined;
+
+		const firstEd = detail
+			? !!detail.stamp?.includes("1st-edition")
+			: /1st|first/i.test(variant);
+		const type = detail?.type ?? this.legacyType(card, variant);
+		for (const key of this.keysFor(type, firstEd)) {
+			const p = this.pick(tp[key]);
+			if (p !== undefined) return p;
+		}
+		return undefined;
+	}
+
+	/** Candidate `pricing.tcgplayer` keys for a printing, best first. */
+	keysFor(type: string, firstEd: boolean): string[] {
+		if (type === "reverse") return ["reverse-holofoil"];
+		const base = type === "holo" ? "holofoil" : "normal";
+		if (firstEd) return [`1st-edition-${base}`, ...(base === "normal" ? ["1st-edition"] : [])];
+		return [base, `unlimited-${base}`, ...(base === "normal" ? ["unlimited"] : [])];
+	}
+
+	private legacyType(card: TcgdexCardFull, variant: string): string {
+		const t = baseType(variant);
+		if (t) return t;
+		const v = card.variants ?? {};
+		return v.holo && !v.normal ? "holo" : "normal";
+	}
+
+	private pick(entry: unknown): number | undefined {
+		if (!entry || typeof entry !== "object") return undefined;
+		const e = entry as TcgplayerPrice;
+		for (const v of [e.marketPrice, e.midPrice, e.lowPrice]) {
+			if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
+		}
+		return undefined;
+	}
+}
+
+/** Price sources, keyed by the `priceProvider` setting. */
+export type PriceSourceId = "tcgdex-cardmarket" | "tcgdex-tcgplayer";
+
+export const PRICE_SOURCES: Record<PriceSourceId, PriceProvider> = {
+	"tcgdex-cardmarket": new CardmarketProvider(),
+	"tcgdex-tcgplayer": new TcgplayerProvider(),
+};
+
 export class PriceService {
 	private plugin: PokemonCollectionPlugin;
-	private provider: PriceProvider;
 
 	constructor(plugin: PokemonCollectionPlugin) {
 		this.plugin = plugin;
-		this.provider = new CardmarketProvider();
 	}
 
+	/** The provider chosen in settings ("Price source"). */
+	get provider(): PriceProvider {
+		return PRICE_SOURCES[this.plugin.settings.priceProvider] ?? PRICE_SOURCES["tcgdex-cardmarket"];
+	}
+
+	/** Currency of the active source (EUR for Cardmarket, USD for TCGplayer). */
 	get currency(): string {
 		return this.provider.currency;
+	}
+
+	/** "€" / "$" for the active source. */
+	get symbol(): string {
+		return currencySymbol(this.currency);
+	}
+
+	/** "Cardmarket" / "TCGplayer". */
+	get sourceLabel(): string {
+		return this.provider.label;
 	}
 
 	/** Multiplier for a raw condition (NM = 1). */
@@ -169,7 +253,8 @@ export class PriceService {
 			this.plugin.cache.addCardPoint(
 				key,
 				price,
-				this.plugin.settings.priceHistoryPoints
+				this.plugin.settings.priceHistoryPoints,
+				this.provider.currency
 			);
 		}
 

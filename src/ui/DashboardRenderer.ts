@@ -6,7 +6,8 @@ import type {
 	ListTotals,
 } from "../services/CollectionService";
 import { lineChart, pieChart } from "./charts";
-import { CardHistoryModal, currencySymbol, formatMove } from "./CardHistory";
+import { CardHistoryModal, formatMove } from "./CardHistory";
+import { formatMoney, isStale, timeAgo } from "../currency";
 import { changeOverDays, changeSincePrevious, PriceMove } from "../priceHistory";
 
 /**
@@ -40,9 +41,79 @@ export async function renderDashboard(
 	}
 
 	const graded = plugin.collection.totals(cards.filter((c) => c.grade));
+	renderPriceStatus(plugin, root, cards, [plugin.collection.totals(cards), wishlist, trade]);
 	renderStats(root, stats, wishlist, trade, graded);
 	if (cards.length) renderCharts(plugin, root, cards, charts);
 	return charts;
+}
+
+/**
+ * Source + freshness line ("Prices from TCGplayer (USD) · updated 2 h ago")
+ * and a warning when some cards are still priced in another currency — those
+ * are never added to the totals.
+ */
+function renderPriceStatus(
+	plugin: PokemonCollectionPlugin,
+	root: HTMLElement,
+	cards: AggregatedCard[],
+	totals: ListTotals[]
+): void {
+	const cur = plugin.price.currency;
+	const other: Record<string, number> = {};
+	for (const t of totals) {
+		for (const [c, o] of Object.entries(t.other)) other[c] = (other[c] ?? 0) + o.cards;
+	}
+	const otherText = Object.entries(other)
+		.map(([c, n]) => `${n} card${n === 1 ? "" : "s"} in ${c}`)
+		.join(", ");
+	if (otherText) {
+		const warn = root.createDiv({ cls: "pokemon-price-warning" });
+		warn.setText(
+			`⚠ ${otherText} — priced before the switch to ${plugin.price.sourceLabel} (${cur}), so not included in the totals. Run "Update all collection prices" to re-price them in ${cur}; graded cards keep manual prices, re-enter those by hand.`
+		);
+	}
+
+	// Freshness of automatic prices (graded / hand-made cards have none).
+	const days = plugin.settings.stalePriceDays;
+	const auto = cards.filter((c) => !c.grade && c.id && !c.id.startsWith("manual-"));
+	const times = auto
+		.map((c) => c.lastPriceUpdate)
+		.filter((t): t is string => !!t)
+		.sort();
+	const stale = auto.filter((c) => isStale(c.lastPriceUpdate, days)).length;
+	const line = root.createDiv({ cls: "pokemon-price-status" });
+	const parts = [`Prices from ${plugin.price.sourceLabel} (${cur})`];
+	if (times.length) parts.push(`updated ${timeAgo(times[times.length - 1])}`);
+	line.setText(parts.join(" · "));
+	if (stale) {
+		line.createSpan({
+			cls: "pokemon-price-stale",
+			text: ` · ${stale} card${stale === 1 ? "" : "s"} not updated in ${days}+ days`,
+			attr: { title: times.length ? `Oldest price: ${timeAgo(times[0])}` : "Never updated" },
+		});
+	}
+}
+
+/** A price element with "updated X ago" tooltip; stale prices highlighted. */
+function priceEl(
+	plugin: PokemonCollectionPlugin,
+	parent: HTMLElement,
+	c: AggregatedCard,
+	value = c.unitPrice
+): HTMLElement {
+	const el = parent.createDiv({
+		cls: "pokemon-collection-top-price",
+		text: formatMoney(value, c.currency),
+	});
+	if (c.grade) {
+		el.title = "Manual price (graded card)";
+	} else if (c.lastPriceUpdate) {
+		el.title = `Updated ${timeAgo(c.lastPriceUpdate)} (${new Date(c.lastPriceUpdate).toLocaleString()})`;
+		if (isStale(c.lastPriceUpdate, plugin.settings.stalePriceDays)) el.addClass("pokemon-price-stale");
+	} else {
+		el.title = "Price never updated";
+	}
+	return el;
 }
 
 function renderStats(
@@ -53,8 +124,7 @@ function renderStats(
 	graded: ListTotals
 ): void {
 	const grid = root.createDiv({ cls: "pokemon-collection-stats" });
-	const cur = stats.currency === "EUR" ? "€" : "";
-	const money = (n: number) => `${cur}${n.toFixed(2)}`;
+	const money = (n: number): string => formatMoney(n, stats.currency);
 	const cardsWord = (n: number): string => `${n} card${n === 1 ? "" : "s"}`;
 
 	const items: Array<[string, string]> = [
@@ -107,10 +177,12 @@ function renderCharts(
 	cards: AggregatedCard[],
 	charts: Chart[]
 ): void {
-	// Collection value over time (portfolio snapshots).
-	const snapshots = plugin.cache.getSnapshots();
+	// Collection value over time — only snapshots in the active currency.
+	const cur = plugin.price.currency;
+	const all = plugin.cache.getSnapshots();
+	const snapshots = all.filter((s) => (s.currency || "EUR") === cur);
 	if (snapshots.length > 0) {
-		const canvas = chartBlock(root, "Collection value over time");
+		const canvas = chartBlock(root, `Collection value over time (${cur})`);
 		charts.push(
 			lineChart(
 				canvas,
@@ -119,17 +191,25 @@ function renderCharts(
 				"Total value"
 			)
 		);
+		if (snapshots.length < all.length) {
+			canvas.parentElement?.parentElement?.createEl("p", {
+				cls: "pokemon-collection-hint",
+				text: `${all.length - snapshots.length} snapshot(s) in another currency are not shown.`,
+			});
+		}
 	} else {
 		hintBlock(
 			root,
 			"Collection value over time",
-			'Run "Update all collection prices" to record value snapshots.'
+			all.length
+				? `No snapshots in ${cur} yet — run "Update all collection prices".`
+				: 'Run "Update all collection prices" to record value snapshots.'
 		);
 	}
 
 	// Most valuable cards: top 10 with image, name, price and source note.
 	const top = [...cards]
-		.filter((c) => c.unitPrice > 0)
+		.filter((c) => c.unitPrice > 0 && plugin.collection.inActiveCurrency(c))
 		.sort((a, b) => b.unitPrice - a.unitPrice)
 		.slice(0, 10);
 	if (top.length) {
@@ -181,7 +261,6 @@ function renderTopValuable(
 	const block = root.createDiv({ cls: "pokemon-collection-chart" });
 	block.createEl("h3", { text: "Most valuable cards" });
 	const list = block.createDiv({ cls: "pokemon-collection-top-list" });
-	const cur = plugin.price.currency === "EUR" ? "€" : "";
 
 	for (const c of top) {
 		const row = list.createDiv({ cls: "pokemon-collection-top-row" });
@@ -189,10 +268,7 @@ function renderTopValuable(
 		const info = cardIdentity(plugin, row, c);
 		noteLinks(plugin, info, c);
 
-		row.createDiv({
-			cls: "pokemon-collection-top-price",
-			text: `${cur}${c.unitPrice.toFixed(2)}`,
-		});
+		priceEl(plugin, row, c);
 	}
 }
 
@@ -255,7 +331,7 @@ const MOVERS_SHOWN = 5;
 
 /**
  * "Biggest movers": top gainers and losers among owned cards, since the
- * previous recorded price or over 30 days, ranked by € or %.
+ * previous recorded price or over 30 days, ranked by amount or %.
  */
 function renderMovers(
 	plugin: PokemonCollectionPlugin,
@@ -276,7 +352,8 @@ function renderMovers(
 		for (const card of cards) {
 			// Graded cards have manual prices only; history is the raw market.
 			if (card.grade) continue;
-			const points = plugin.cache.getCardHistory(card.printingKey);
+			// Only points in the active currency (never mix EUR and USD).
+			const points = plugin.cache.getCardHistory(card.printingKey, plugin.price.currency);
 			const move =
 				period === "last" ? changeSincePrevious(points) : changeOverDays(points, 30);
 			if (move && move.abs !== 0) moves.push({ card, move });
@@ -335,7 +412,7 @@ function renderMovers(
 	);
 	segmented<MoverSort>(
 		[
-			["eur", "€"],
+			["eur", plugin.price.symbol.trim() || plugin.price.currency],
 			["pct", "%"],
 		],
 		() => sort,
@@ -356,17 +433,15 @@ function moverColumn(
 		col.createEl("p", { cls: "pokemon-collection-hint", text: "None." });
 		return;
 	}
-	const cur = currencySymbol(plugin);
+	const cur = plugin.price.symbol;
 	const list = col.createDiv({ cls: "pokemon-collection-top-list" });
 	for (const { card, move } of items) {
 		const row = list.createDiv({ cls: "pokemon-collection-top-row" });
 		const info = cardIdentity(plugin, row, card);
 		noteLinks(plugin, info, card);
 		const price = row.createDiv({ cls: "pokemon-movers-price" });
-		price.createDiv({
-			cls: "pokemon-collection-top-price",
-			text: `${cur}${move.to.toFixed(2)}`,
-		});
+		// The move's latest point, in the active currency.
+		priceEl(plugin, price, { ...card, currency: plugin.price.currency }, move.to);
 		price.createDiv({
 			cls: `pokemon-move ${move.abs > 0 ? "pokemon-move-up" : "pokemon-move-down"}`,
 			text: formatMove(move, cur),

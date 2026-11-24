@@ -8,6 +8,7 @@ import {
 	cardmarketUrl,
 	isLatinName,
 } from "../cardmarket";
+import { formatMoney, isStale, timeAgo } from "../currency";
 
 export type GallerySource = "this" | "folder";
 export type GallerySort = "number" | "price" | "name";
@@ -144,10 +145,6 @@ export class GalleryBlock extends MarkdownRenderChild {
 		return this.opts.lang || this.plugin.settings.preferredLanguage || "en";
 	}
 
-	private get cur(): string {
-		return this.plugin.price.currency === "EUR" ? "€" : "";
-	}
-
 	async render(): Promise<void> {
 		const root = this.containerEl;
 		root.empty();
@@ -191,8 +188,13 @@ export class GalleryBlock extends MarkdownRenderChild {
 
 		const sorted = sortCards(cards, this.opts.sort);
 		const total = sorted.reduce((s, c) => s + c.quantity, 0);
-		const value = sorted.reduce((s, c) => s + c.quantity * c.unitPrice, 0);
-		title.setText(`${total} card${total === 1 ? "" : "s"} · ${this.cur}${value.toFixed(2)}`);
+		// Sum only the active currency; cards still priced in another are noted.
+		const totals = this.plugin.collection.totals(sorted);
+		const other = Object.values(totals.other).reduce((n, o) => n + o.cards, 0);
+		title.setText(
+			`${total} card${total === 1 ? "" : "s"} · ${formatMoney(totals.value, this.plugin.price.currency)}` +
+				(other ? ` (+${other} priced in another currency)` : "")
+		);
 		if (!sorted.length) {
 			body.createEl("p", {
 				cls: "pokemon-collection-hint",
@@ -311,10 +313,17 @@ export class GalleryBlock extends MarkdownRenderChild {
 			text: [num && `#${num}`, variants].filter(Boolean).join(" · "),
 			attr: { title: variants },
 		});
-		cap.createDiv({
+		const price = cap.createDiv({
 			cls: "pokemon-gallery-price",
-			text: main.unitPrice ? `${this.cur}${main.unitPrice.toFixed(2)}` : "—",
+			text: main.unitPrice ? formatMoney(main.unitPrice, main.currency) : "—",
 		});
+		if (main.grade) price.title = "Manual price (graded card)";
+		else if (main.lastPriceUpdate) {
+			price.title = `Updated ${timeAgo(main.lastPriceUpdate)}`;
+			if (isStale(main.lastPriceUpdate, this.plugin.settings.stalePriceDays)) {
+				price.addClass("pokemon-price-stale");
+			}
+		}
 	}
 
 	/** Greyed slot for a card of the set you don't own. */

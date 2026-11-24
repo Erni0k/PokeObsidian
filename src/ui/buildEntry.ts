@@ -46,7 +46,7 @@ export async function buildEntryFromCard(
 		setIcon: card.set?.symbol,
 		cardUrl: plugin.api.cardPageUrl(id),
 		marketPrice: market,
-		currency: "EUR",
+		currency: plugin.price.currency,
 		cardmarketId: card.pricing?.cardmarket?.idProduct,
 		cardmarketUrl,
 		lastPriceUpdate: market !== undefined ? now : undefined,
@@ -64,6 +64,7 @@ export async function buildEntryFromCard(
 		grade: grade || undefined,
 		quantity,
 		price,
+		currency: price !== undefined ? plugin.price.currency : undefined,
 		key,
 	};
 }

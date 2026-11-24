@@ -132,9 +132,14 @@ export class CacheService {
 
 	// --- Per-card price history ---------------------------------------------
 
-	/** Recorded price points of a card, oldest first (empty if none). */
-	getCardHistory(key: CardKey): PricePoint[] {
-		return this.history.cards?.[key] ?? [];
+	/**
+	 * Recorded price points of a card, oldest first (empty if none). With
+	 * `currency`, only the points in that currency (points recorded before
+	 * price sources existed are EUR) — never mix EUR and USD in one series.
+	 */
+	getCardHistory(key: CardKey, currency?: string): PricePoint[] {
+		const all = this.history.cards?.[key] ?? [];
+		return currency ? all.filter((p) => (p.c ?? "EUR") === currency) : all;
 	}
 
 	/** Every card key that has recorded history. */
@@ -147,15 +152,26 @@ export class CacheService {
 	 * keep only the newest `max` points. Returns whether a point was added.
 	 * The write is debounced: "Update all prices" records hundreds of points.
 	 */
-	addCardPoint(key: CardKey, price: number, max: number): boolean {
+	addCardPoint(key: CardKey, price: number, max: number, currency = "EUR"): boolean {
 		if (!Number.isFinite(price)) return false;
 		const cards = (this.history.cards ??= {});
 		const list = (cards[key] ??= []);
-		const last = list[list.length - 1];
+		// Compare with the last point in the same currency (sources can switch).
+		const same = list.filter((p) => (p.c ?? "EUR") === currency);
+		const last = same[same.length - 1];
 		if (last && Math.abs(last.p - price) < 0.005) return false;
-		list.push({ t: new Date().toISOString(), p: price });
+		list.push({ t: new Date().toISOString(), p: price, c: currency });
+		// Keep the newest `max` points per currency.
 		const keep = Math.max(2, Math.floor(max) || 2);
-		if (list.length > keep) list.splice(0, list.length - keep);
+		if (same.length + 1 > keep) {
+			let drop = same.length + 1 - keep;
+			for (let i = 0; i < list.length && drop > 0; ) {
+				if ((list[i].c ?? "EUR") === currency) {
+					list.splice(i, 1);
+					drop--;
+				} else i++;
+			}
+		}
 		if (this.historySaveTimer !== null) window.clearTimeout(this.historySaveTimer);
 		this.historySaveTimer = window.setTimeout(() => void this.flushHistory(), 2000);
 		return true;

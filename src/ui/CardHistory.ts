@@ -4,11 +4,7 @@ import type PokemonCollectionPlugin from "../main";
 import type { CardKey } from "../types";
 import { priceChart } from "./charts";
 import { changeOverDays, changeSincePrevious, PriceMove } from "../priceHistory";
-
-/** Currency symbol for display. */
-export function currencySymbol(plugin: PokemonCollectionPlugin): string {
-	return plugin.price.currency === "EUR" ? "€" : "";
-}
+import { isStale, timeAgo } from "../currency";
 
 /** "+€1.20 (+12.5%)" style label for a move. */
 export function formatMove(move: PriceMove, cur: string): string {
@@ -47,10 +43,13 @@ export function renderCardHistory(
 ): Chart | undefined {
 	root.empty();
 	root.addClass("pokemon-card-history");
-	const cur = currencySymbol(plugin);
+	// One series per currency: show the active price source's.
+	const code = plugin.price.currency;
+	const cur = plugin.price.symbol;
 	const meta = plugin.cache.getMeta(key);
 	const { id, variant } = plugin.markdown.splitKey(key);
-	const points = plugin.cache.getCardHistory(key);
+	const points = plugin.cache.getCardHistory(key, code);
+	const otherPoints = plugin.cache.getCardHistory(key).length - points.length;
 
 	const head = root.createDiv({ cls: "pokemon-card-history-head" });
 	const img = plugin.api.imageUrl(meta?.image, "low");
@@ -76,10 +75,21 @@ export function renderCardHistory(
 	if (prev) moveLine(stats, "last change", prev, cur);
 	if (month) moveLine(stats, "30 days", month, cur);
 
+	if (meta?.lastPriceUpdate) {
+		const updated = stats.createDiv({
+			cls: "pokemon-collection-hint",
+			text: `updated ${timeAgo(meta.lastPriceUpdate)}`,
+			attr: { title: new Date(meta.lastPriceUpdate).toLocaleString() },
+		});
+		if (isStale(meta.lastPriceUpdate, plugin.settings.stalePriceDays)) updated.addClass("pokemon-price-stale");
+	}
+
 	if (!points.length) {
 		root.createEl("p", {
 			cls: "pokemon-collection-hint",
-			text: 'No price history yet. It is recorded when prices are updated ("Update all collection prices") and the price changes.',
+			text: otherPoints
+				? `No ${code} prices recorded yet (${otherPoints} in another currency from the previous price source). Run "Update all collection prices".`
+				: 'No price history yet. It is recorded when prices are updated ("Update all collection prices") and the price changes.',
 		});
 		return undefined;
 	}
@@ -93,7 +103,9 @@ export function renderCardHistory(
 	const chart = priceChart(wrap.createEl("canvas"), data, cur);
 	root.createDiv({
 		cls: "pokemon-collection-hint",
-		text: `${points.length} recorded price${points.length === 1 ? "" : "s"} since ${new Date(points[0].t).toLocaleDateString()}.`,
+		text: `${points.length} recorded ${plugin.price.sourceLabel} price${points.length === 1 ? "" : "s"} (${code}) since ${new Date(points[0].t).toLocaleDateString()}.${
+			otherPoints ? ` ${otherPoints} in another currency not shown.` : ""
+		}`,
 	});
 	return chart;
 }

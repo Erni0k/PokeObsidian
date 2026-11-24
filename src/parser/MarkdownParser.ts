@@ -1,6 +1,7 @@
 import type PokemonCollectionPlugin from "../main";
 import type { CardKey, CollectionEntry, Variant } from "../types";
 import { cardmarketUrl } from "../cardmarket";
+import { currencyFromText, formatMoney } from "../currency";
 import {
 	conditionRank,
 	DEFAULT_CONDITION,
@@ -152,9 +153,10 @@ export class MarkdownParser {
 		return { id, variant: parts.join(":") || "normal", condition, grade };
 	}
 
-	formatPrice(price: number | undefined): string {
+	/** "€12.00" / "$12.00": the row's currency, else the price source's. */
+	formatPrice(price: number | undefined, currency?: string): string {
 		if (price === undefined || !Number.isFinite(price)) return "";
-		return `€${price.toFixed(2)}`;
+		return formatMoney(price, currency ?? this.plugin.price.currency);
 	}
 
 	parsePrice(text: string): number | undefined {
@@ -286,6 +288,7 @@ export class MarkdownParser {
 			grade: grade || undefined,
 			quantity,
 			price: this.parsePrice(get("price")),
+			currency: this.parsePrice(get("price")) !== undefined ? currencyFromText(get("price")) : undefined,
 			key,
 		};
 	}
@@ -428,7 +431,7 @@ export class MarkdownParser {
 			this.escape(e.grade ?? ""),
 			this.escape(e.language),
 			String(e.quantity),
-			this.formatPrice(e.price),
+			this.formatPrice(e.price, e.currency),
 		];
 		const cells = this.imageColumnEnabled()
 			? [this.imageCell(e), ...baseCells]
@@ -505,6 +508,7 @@ export class MarkdownParser {
 				...existing,
 				quantity: existing.quantity + addQty,
 				price: entry.price ?? existing.price,
+				currency: entry.price !== undefined ? entry.currency : existing.currency,
 			};
 		} else {
 			next.push({ ...entry, quantity: addQty });

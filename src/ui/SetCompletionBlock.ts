@@ -1,5 +1,6 @@
 import { MarkdownRenderChild, TFile } from "obsidian";
 import type PokemonCollectionPlugin from "../main";
+import { formatMoney, isStale, timeAgo } from "../currency";
 import type {
 	CompletionPart,
 	CompletionResult,
@@ -231,8 +232,7 @@ export class SetCompletionBlock extends MarkdownRenderChild {
 
 	private renderList(body: HTMLElement, r: CompletionResult): void {
 		const part = this.mode === "master" ? r.master : r.regular;
-		const cur = r.snapshot.currency === "EUR" ? "€" : "";
-		const money = (n: number): string => `${cur}${n.toFixed(2)}`;
+		const money = (n: number): string => formatMoney(n, r.snapshot.currency);
 
 		const bar = body.createDiv({ cls: "pokemon-set-toolbar" });
 		const toggle = bar.createDiv({ cls: "pokemon-set-toggle" });
@@ -288,12 +288,20 @@ export class SetCompletionBlock extends MarkdownRenderChild {
 		}
 
 		const when = new Date(r.snapshot.fetchedAt);
-		const ageH = (Date.now() - when.getTime()) / 3600000;
-		const stale = ageH > this.plugin.settings.cacheDurationHours;
-		body.createDiv({
+		const stale = isStale(r.snapshot.fetchedAt, this.plugin.settings.stalePriceDays);
+		const otherCurrency = r.snapshot.currency !== this.plugin.price.currency;
+		const note = body.createDiv({
 			cls: "pokemon-collection-hint",
-			text: `Prices from ${when.toLocaleString()}${stale ? " — click “Refresh prices” for current ones" : ""}.`,
+			text: `Prices (${r.snapshot.currency}) updated ${timeAgo(r.snapshot.fetchedAt)}${
+				otherCurrency
+					? ` — your price source is now ${this.plugin.price.sourceLabel} (${this.plugin.price.currency}); click “Refresh prices”`
+					: stale
+						? " — click “Refresh prices” for current ones"
+						: ""
+			}.`,
+			attr: { title: when.toLocaleString() },
 		});
+		if (stale || otherCurrency) note.addClass("pokemon-price-stale");
 	}
 
 	/**
