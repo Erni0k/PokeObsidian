@@ -18,6 +18,8 @@ export interface AggregatedCard {
 	id: string;
 	name: string;
 	setName: string;
+	/** Collector number from the table ("021"). */
+	number: string;
 	variant: string;
 	condition: string;
 	grade?: string;
@@ -129,9 +131,23 @@ export class CollectionService {
 	 * same card in a collection and a wishlist stays two separate items.
 	 */
 	async scan(lists?: ListType[]): Promise<AggregatedCard[]> {
+		return this.aggregate(await this.scanNotes(lists));
+	}
+
+	/** The cards of a single note (its own list type), aggregated by key. */
+	async scanFile(file: TFile): Promise<AggregatedCard[]> {
+		const content = await this.plugin.app.vault.cachedRead(file);
+		if (!this.plugin.markdown.hasSection(content)) return [];
+		return this.aggregate([
+			{ file, list: this.listTypeOf(file), entries: this.plugin.markdown.parseEntries(content) },
+		]);
+	}
+
+	/** Aggregate parsed notes, one item per (list type, key). */
+	aggregate(notes: NoteEntries[]): AggregatedCard[] {
 		const byKey = new Map<string, AggregatedCard>();
 
-		for (const { file, list, entries } of await this.scanNotes(lists)) {
+		for (const { file, list, entries } of notes) {
 			for (const e of entries) {
 				const printingKey = this.plugin.markdown.printingKey(e);
 				const meta = this.plugin.cache.getMeta(printingKey);
@@ -152,6 +168,7 @@ export class CollectionService {
 						id: e.id,
 						name: e.name,
 						setName: e.setName || meta?.setName || "Unknown",
+						number: e.number,
 						variant: String(e.variant),
 						condition: e.condition,
 						grade: e.grade,

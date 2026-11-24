@@ -16,6 +16,7 @@ import { CommandController } from "./commands";
 import { DashboardBlock } from "./ui/DashboardBlock";
 import { SetCompletionBlock } from "./ui/SetCompletionBlock";
 import { CardHistoryBlock } from "./ui/CardHistory";
+import { GalleryBlock } from "./ui/GalleryBlock";
 import { registerTableSort } from "./ui/tableSort";
 
 /** Legacy sidebar view type — detached on load so old leaves don't error. */
@@ -85,6 +86,16 @@ export default class PokemonCollectionPlugin extends Plugin {
 			ctx.addChild(child);
 			child.render();
 		});
+
+		// Card gallery / binder: ```pokemon-gallery```.
+		this.registerMarkdownCodeBlockProcessor(
+			"pokemon-gallery",
+			async (source, el, ctx) => {
+				const child = new GalleryBlock(this, el, source, ctx.sourcePath);
+				ctx.addChild(child);
+				await child.render();
+			}
+		);
 
 		// Clickable column headers to sort collection tables in Reading view.
 		registerTableSort(this);
