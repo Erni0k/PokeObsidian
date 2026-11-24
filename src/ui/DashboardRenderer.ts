@@ -5,6 +5,8 @@ import type {
 	CollectionStats,
 } from "../services/CollectionService";
 import { lineChart, pieChart } from "./charts";
+import { CardHistoryModal, currencySymbol, formatMove } from "./CardHistory";
+import { changeOverDays, changeSincePrevious, PriceMove } from "../priceHistory";
 
 /**
  * Renders the dashboard (statistics + charts) into `root` and returns the
@@ -111,6 +113,9 @@ function renderCharts(
 		renderTopValuable(plugin, root, top);
 	}
 
+	// Biggest movers from the per-card price history.
+	renderMovers(plugin, root, cards);
+
 	// Collection by set (quantity).
 	const bySet = groupSum(cards, (c) => c.setName);
 	if (bySet.labels.length) {
@@ -149,35 +154,185 @@ function renderTopValuable(
 	for (const c of top) {
 		const row = list.createDiv({ cls: "pokemon-collection-top-row" });
 
-		const url = plugin.api.imageUrl(c.image, "low");
-		if (url) {
-			const img = row.createEl("img", { cls: "pokemon-collection-top-img" });
-			img.src = url;
-		}
-
-		const info = row.createDiv({ cls: "pokemon-collection-top-info" });
-		info.createEl("div", {
-			cls: "pokemon-collection-top-name",
-			text: `${c.name} · ${c.variant}`,
-		});
-
-		const notes = info.createDiv({ cls: "pokemon-collection-top-notes" });
-		notes.createSpan({ text: "in " });
-		c.notePaths.forEach((path, i) => {
-			if (i > 0) notes.createSpan({ text: ", " });
-			const link = notes.createEl("a", {
-				text: path.replace(/\.md$/, "").split("/").pop() ?? path,
-				cls: "pokemon-collection-note-link",
-			});
-			link.onclick = (ev) => {
-				ev.preventDefault();
-				void plugin.app.workspace.openLinkText(path, "", false);
-			};
-		});
+		const info = cardIdentity(plugin, row, c);
+		noteLinks(plugin, info, c);
 
 		row.createDiv({
 			cls: "pokemon-collection-top-price",
 			text: `${cur}${c.unitPrice.toFixed(2)}`,
+		});
+	}
+}
+
+/** Thumbnail + "Name · variant"; both open the card's price chart. */
+function cardIdentity(
+	plugin: PokemonCollectionPlugin,
+	row: HTMLElement,
+	c: AggregatedCard
+): HTMLElement {
+	const open = (): void => new CardHistoryModal(plugin, c.key).open();
+	const url = plugin.api.imageUrl(c.image, "low");
+	if (url) {
+		const img = row.createEl("img", { cls: "pokemon-collection-top-img is-clickable" });
+		img.src = url;
+		img.onclick = open;
+	}
+	const info = row.createDiv({ cls: "pokemon-collection-top-info" });
+	const name = info.createEl("a", {
+		cls: "pokemon-collection-top-name",
+		text: `${c.name} · ${c.variant}`,
+		attr: { title: "Show price history" },
+	});
+	name.onclick = (ev) => {
+		ev.preventDefault();
+		open();
+	};
+	return info;
+}
+
+/** "in Note A, Note B" links to the notes a card appears in. */
+function noteLinks(
+	plugin: PokemonCollectionPlugin,
+	info: HTMLElement,
+	c: AggregatedCard
+): void {
+	const notes = info.createDiv({ cls: "pokemon-collection-top-notes" });
+	notes.createSpan({ text: "in " });
+	c.notePaths.forEach((path, i) => {
+		if (i > 0) notes.createSpan({ text: ", " });
+		const link = notes.createEl("a", {
+			text: path.replace(/\.md$/, "").split("/").pop() ?? path,
+			cls: "pokemon-collection-note-link",
+		});
+		link.onclick = (ev) => {
+			ev.preventDefault();
+			void plugin.app.workspace.openLinkText(path, "", false);
+		};
+	});
+}
+
+type MoverPeriod = "last" | "30d";
+type MoverSort = "eur" | "pct";
+const MOVERS_SHOWN = 5;
+
+/**
+ * "Biggest movers": top gainers and losers among owned cards, since the
+ * previous recorded price or over 30 days, ranked by € or %.
+ */
+function renderMovers(
+	plugin: PokemonCollectionPlugin,
+	root: HTMLElement,
+	cards: AggregatedCard[]
+): void {
+	const block = root.createDiv({ cls: "pokemon-collection-chart" });
+	const head = block.createDiv({ cls: "pokemon-movers-head" });
+	head.createEl("h3", { text: "Biggest movers" });
+	const controls = head.createDiv({ cls: "pokemon-movers-controls" });
+	const body = block.createDiv();
+	let period: MoverPeriod = "last";
+	let sort: MoverSort = "eur";
+
+	const draw = (): void => {
+		body.empty();
+		const moves: { card: AggregatedCard; move: PriceMove }[] = [];
+		for (const card of cards) {
+			const points = plugin.cache.getCardHistory(card.key);
+			const move =
+				period === "last" ? changeSincePrevious(points) : changeOverDays(points, 30);
+			if (move && move.abs !== 0) moves.push({ card, move });
+		}
+		if (!moves.length) {
+			body.createEl("p", {
+				cls: "pokemon-collection-hint",
+				text:
+					period === "last"
+						? 'No price changes recorded yet. Each card\'s price is tracked when you run "Update all collection prices".'
+						: "No price changes in the last 30 days.",
+			});
+			return;
+		}
+		const score = (m: PriceMove): number => (sort === "eur" ? m.abs : m.pct);
+		const up = moves
+			.filter((m) => m.move.abs > 0)
+			.sort((a, b) => score(b.move) - score(a.move))
+			.slice(0, MOVERS_SHOWN);
+		const down = moves
+			.filter((m) => m.move.abs < 0)
+			.sort((a, b) => score(a.move) - score(b.move))
+			.slice(0, MOVERS_SHOWN);
+
+		const cols = body.createDiv({ cls: "pokemon-movers-cols" });
+		moverColumn(plugin, cols, "Gainers", up);
+		moverColumn(plugin, cols, "Losers", down);
+	};
+
+	const segmented = <T extends string>(
+		options: [T, string][],
+		get: () => T,
+		set: (v: T) => void
+	): void => {
+		const group = controls.createDiv({ cls: "pokemon-set-toggle" });
+		const buttons = options.map(([value, label]) => {
+			const b = group.createEl("button", { text: label });
+			b.onclick = () => {
+				set(value);
+				sync();
+				draw();
+			};
+			return b;
+		});
+		const sync = (): void =>
+			buttons.forEach((x, i) => x.toggleClass("mod-cta", options[i][0] === get()));
+		sync();
+	};
+	segmented<MoverPeriod>(
+		[
+			["last", "Last change"],
+			["30d", "30 days"],
+		],
+		() => period,
+		(v) => (period = v)
+	);
+	segmented<MoverSort>(
+		[
+			["eur", "€"],
+			["pct", "%"],
+		],
+		() => sort,
+		(v) => (sort = v)
+	);
+	draw();
+}
+
+function moverColumn(
+	plugin: PokemonCollectionPlugin,
+	parent: HTMLElement,
+	title: string,
+	items: { card: AggregatedCard; move: PriceMove }[]
+): void {
+	const col = parent.createDiv({ cls: "pokemon-movers-col" });
+	col.createEl("h4", { text: title });
+	if (!items.length) {
+		col.createEl("p", { cls: "pokemon-collection-hint", text: "None." });
+		return;
+	}
+	const cur = currencySymbol(plugin);
+	const list = col.createDiv({ cls: "pokemon-collection-top-list" });
+	for (const { card, move } of items) {
+		const row = list.createDiv({ cls: "pokemon-collection-top-row" });
+		const info = cardIdentity(plugin, row, card);
+		noteLinks(plugin, info, card);
+		const price = row.createDiv({ cls: "pokemon-movers-price" });
+		price.createDiv({
+			cls: "pokemon-collection-top-price",
+			text: `${cur}${move.to.toFixed(2)}`,
+		});
+		price.createDiv({
+			cls: `pokemon-move ${move.abs > 0 ? "pokemon-move-up" : "pokemon-move-down"}`,
+			text: formatMove(move, cur),
+			attr: {
+				title: `from ${cur}${move.from.toFixed(2)} on ${new Date(move.since).toLocaleDateString()}`,
+			},
 		});
 	}
 }

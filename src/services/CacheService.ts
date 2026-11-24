@@ -7,6 +7,7 @@ import type {
 	CardKey,
 	MetaCache,
 	PriceHistory,
+	PricePoint,
 	ValueSnapshot,
 } from "../types";
 
@@ -30,6 +31,8 @@ export class CacheService {
 	private dir: string;
 	/** Pending debounced write of cache.json. */
 	private apiSaveTimer: number | null = null;
+	/** Pending debounced write of price-history.json. */
+	private historySaveTimer: number | null = null;
 
 	constructor(plugin: PokemonCollectionPlugin) {
 		this.plugin = plugin;
@@ -44,8 +47,10 @@ export class CacheService {
 		this.metaCache = (await this.readJson<MetaCache>(META_FILE)) ?? {
 			cards: {},
 		};
-		this.history = (await this.readJson<PriceHistory>(HISTORY_FILE)) ?? {
-			snapshots: [],
+		const history = await this.readJson<PriceHistory>(HISTORY_FILE);
+		this.history = {
+			snapshots: history?.snapshots ?? [],
+			cards: history?.cards ?? {},
 		};
 	}
 
@@ -83,6 +88,7 @@ export class CacheService {
 
 	/** Write any pending cache.json change now (e.g. on unload). */
 	async flush(): Promise<void> {
+		if (this.historySaveTimer !== null) await this.flushHistory();
 		if (this.apiSaveTimer === null) return;
 		window.clearTimeout(this.apiSaveTimer);
 		this.apiSaveTimer = null;
@@ -121,6 +127,43 @@ export class CacheService {
 
 	async addSnapshot(snapshot: ValueSnapshot): Promise<void> {
 		this.history.snapshots.push(snapshot);
+		await this.flushHistory();
+	}
+
+	// --- Per-card price history ---------------------------------------------
+
+	/** Recorded price points of a card, oldest first (empty if none). */
+	getCardHistory(key: CardKey): PricePoint[] {
+		return this.history.cards?.[key] ?? [];
+	}
+
+	/** Every card key that has recorded history. */
+	getCardHistoryKeys(): CardKey[] {
+		return Object.keys(this.history.cards ?? {});
+	}
+
+	/**
+	 * Append a price point unless it equals the last one (to the cent), then
+	 * keep only the newest `max` points. Returns whether a point was added.
+	 * The write is debounced: "Update all prices" records hundreds of points.
+	 */
+	addCardPoint(key: CardKey, price: number, max: number): boolean {
+		if (!Number.isFinite(price)) return false;
+		const cards = (this.history.cards ??= {});
+		const list = (cards[key] ??= []);
+		const last = list[list.length - 1];
+		if (last && Math.abs(last.p - price) < 0.005) return false;
+		list.push({ t: new Date().toISOString(), p: price });
+		const keep = Math.max(2, Math.floor(max) || 2);
+		if (list.length > keep) list.splice(0, list.length - keep);
+		if (this.historySaveTimer !== null) window.clearTimeout(this.historySaveTimer);
+		this.historySaveTimer = window.setTimeout(() => void this.flushHistory(), 2000);
+		return true;
+	}
+
+	private async flushHistory(): Promise<void> {
+		if (this.historySaveTimer !== null) window.clearTimeout(this.historySaveTimer);
+		this.historySaveTimer = null;
 		await this.writeJson(HISTORY_FILE, this.history);
 	}
 

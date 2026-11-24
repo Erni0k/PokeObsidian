@@ -287,3 +287,80 @@ th.pokemon-sortable:hover {
 	text-align: right;
 	font-variant-numeric: tabular-nums;
 }
+
+/* ---- Price history: movers + card chart ------------------------------ */
+.pokemon-movers-head {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+}
+
+.pokemon-movers-controls {
+	display: flex;
+	gap: 0.5rem;
+}
+
+.pokemon-movers-cols {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+	gap: 1rem;
+}
+
+.pokemon-movers-col h4 {
+	margin: 0.4rem 0;
+}
+
+.pokemon-movers-price {
+	margin-left: auto;
+	text-align: right;
+}
+
+.pokemon-move {
+	font-size: var(--font-ui-smaller);
+	font-variant-numeric: tabular-nums;
+}
+
+.pokemon-move-up {
+	color: var(--color-green);
+}
+
+.pokemon-move-down {
+	color: var(--color-red);
+}
+
+.pokemon-collection-top-img.is-clickable,
+a.pokemon-collection-top-name {
+	cursor: pointer;
+}
+
+a.pokemon-collection-top-name {
+	display: block;
+	color: var(--text-normal);
+	text-decoration: none;
+}
+
+a.pokemon-collection-top-name:hover {
+	text-decoration: underline;
+}
+
+.pokemon-card-history-head {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	margin-bottom: 0.5rem;
+}
+
+.pokemon-card-history-stats {
+	margin-left: auto;
+	text-align: right;
+}
+
+.pokemon-card-history .pokemon-collection-chart-canvas {
+	height: 260px;
+}
+
+.pokemon-card-history-modal {
+	width: min(720px, 95vw);
+}

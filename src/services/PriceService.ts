@@ -115,7 +115,9 @@ export class PriceService {
 		// Ids are per language (e.g. Japanese "SV2a-006"): fetch in the
 		// language the card was added in, not just the preferred one.
 		const lang = prev?.lang ?? this.plugin.settings.preferredLanguage ?? "en";
-		const card = await this.plugin.api.getCard(id, lang);
+		// Always fetch fresh (stale cache is the offline fallback): a price
+		// update served from the 24h cache would never record a change.
+		const card = await this.plugin.api.getCard(id, lang, { force: true });
 		if (!card) return undefined;
 		const price = this.provider.priceFor(card, variant);
 		const now = new Date().toISOString();
@@ -138,6 +140,14 @@ export class PriceService {
 			lastPriceUpdate: now,
 			dateAdded: prev?.dateAdded ?? now,
 		});
+
+		if (price !== undefined) {
+			this.plugin.cache.addCardPoint(
+				key,
+				price,
+				this.plugin.settings.priceHistoryPoints
+			);
+		}
 
 		return price;
 	}

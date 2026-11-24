@@ -55,6 +55,56 @@ export function lineChart(
 	});
 }
 
+/**
+ * Price of one card over time. Points are recorded only on change, so the
+ * line is stepped (a price holds until the next point) and drawn on a linear
+ * time axis (real spacing, no date adapter needed).
+ */
+export function priceChart(
+	canvas: HTMLCanvasElement,
+	points: { x: number; y: number }[],
+	currencySymbol: string
+): Chart {
+	const day = (ms: number): string => new Date(ms).toLocaleDateString();
+	const money = (n: number): string => `${currencySymbol}${n.toFixed(2)}`;
+	return new Chart(canvas, {
+		type: "line",
+		data: {
+			datasets: [
+				{
+					label: "Price",
+					data: points,
+					borderColor: color(2),
+					backgroundColor: "rgba(56,103,214,0.15)",
+					fill: true,
+					stepped: "after",
+					pointRadius: 3,
+				},
+			],
+		},
+		options: {
+			responsive: true,
+			maintainAspectRatio: false,
+			plugins: {
+				legend: { display: false },
+				tooltip: {
+					callbacks: {
+						title: (items) => (items[0] ? day(items[0].parsed.x ?? 0) : ""),
+						label: (item) => money(item.parsed.y ?? 0),
+					},
+				},
+			},
+			scales: {
+				x: {
+					type: "linear",
+					ticks: { callback: (v) => day(Number(v)), maxTicksLimit: 6 },
+				},
+				y: { ticks: { callback: (v) => money(Number(v)) } },
+			},
+		},
+	});
+}
+
 export function barChart(
 	canvas: HTMLCanvasElement,
 	labels: string[],

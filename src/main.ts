@@ -14,6 +14,7 @@ import { MarkdownParser } from "./parser/MarkdownParser";
 import { CommandController } from "./commands";
 import { DashboardBlock } from "./ui/DashboardBlock";
 import { SetCompletionBlock } from "./ui/SetCompletionBlock";
+import { CardHistoryBlock } from "./ui/CardHistory";
 import { registerTableSort } from "./ui/tableSort";
 
 /** Legacy sidebar view type — detached on load so old leaves don't error. */
@@ -74,6 +75,13 @@ export default class PokemonCollectionPlugin extends Plugin {
 				await child.render();
 			}
 		);
+
+		// Price chart of one card: ```pokemon-card sv10-021:normal```.
+		this.registerMarkdownCodeBlockProcessor("pokemon-card", (source, el, ctx) => {
+			const child = new CardHistoryBlock(this, el, source);
+			ctx.addChild(child);
+			child.render();
+		});
 
 		// Clickable column headers to sort collection tables in Reading view.
 		registerTableSort(this);

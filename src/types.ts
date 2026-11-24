@@ -101,9 +101,20 @@ export interface ValueSnapshot {
 	currency: string;
 }
 
-/** Persistent price history: portfolio snapshots only (per spec, v1). */
+/** One recorded price of a card: ISO timestamp + per-unit price. */
+export interface PricePoint {
+	t: string;
+	p: number;
+}
+
+/**
+ * Persistent price history: portfolio snapshots, plus per-card points keyed
+ * by {@link CardKey} (recorded only when the price changes). Older files have
+ * no `cards` — treated as empty.
+ */
 export interface PriceHistory {
 	snapshots: ValueSnapshot[];
+	cards?: Record<CardKey, PricePoint[]>;
 }
 
 /** On-disk shape of the API response cache. */

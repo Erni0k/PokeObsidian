@@ -41,6 +41,8 @@ export interface PokemonCollectionSettings {
 	cacheDurationHours: number;
 	/** How long the cached set list (/sets) stays fresh, in hours. */
 	setsListTtlHours: number;
+	/** Max recorded price points kept per card. */
+	priceHistoryPoints: number;
 	/** Default quantity added per "Add Card" action. */
 	defaultQuantity: number;
 	/** Rendered image width in pixels (previews). */
@@ -66,6 +68,7 @@ export const DEFAULT_SETTINGS: PokemonCollectionSettings = {
 	autoUpdateIntervalMinutes: 0,
 	cacheDurationHours: 24,
 	setsListTtlHours: 6,
+	priceHistoryPoints: 100,
 	defaultQuantity: 1,
 	imageSize: 200,
 	enableImagePreviews: false,
@@ -243,6 +246,22 @@ export class PokemonCollectionSettingTab extends PluginSettingTab {
 						const n = Number.parseFloat(value);
 						this.plugin.settings.setsListTtlHours =
 							Number.isFinite(n) && n > 0 ? n : 6;
+						await this.plugin.saveSettings();
+					});
+			});
+
+		new Setting(containerEl)
+			.setName("Price history per card")
+			.setDesc(
+				"How many price changes to keep for each card (a point is recorded only when its price changes)."
+			)
+			.addText((text) => {
+				text
+					.setValue(String(this.plugin.settings.priceHistoryPoints))
+					.onChange(async (value) => {
+						const n = Number.parseInt(value, 10);
+						this.plugin.settings.priceHistoryPoints =
+							Number.isFinite(n) && n >= 2 ? n : 100;
 						await this.plugin.saveSettings();
 					});
 			});
