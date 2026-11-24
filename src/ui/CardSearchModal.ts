@@ -1,4 +1,4 @@
-import { Modal, Notice, Setting } from "obsidian";
+import { Modal, Notice, Setting, TextComponent } from "obsidian";
 import type PokemonCollectionPlugin from "../main";
 import type { CollectionEntry, TcgdexCardBrief } from "../types";
 import type {
@@ -37,6 +37,8 @@ export class CardSearchModal extends Modal {
 	private setValue = "";
 	/** Exact set id chosen from autocomplete (overrides the free-text set). */
 	private pickedSetId: string | undefined;
+	private setInput?: TextComponent;
+	private setSuggest?: SetSuggest;
 	private lang: string;
 	private resultsEl!: HTMLElement;
 	private searchTimer: number | null = null;
@@ -92,7 +94,8 @@ export class CardSearchModal extends Modal {
 			});
 
 		new Setting(contentEl).setName("Set").addText((t) => {
-			t.setPlaceholder("Base Set (name or id)")
+			this.setInput = t;
+			t.setPlaceholder("Name or code, e.g. Destined Rivals / DRI")
 				.setValue(this.setValue)
 				.onChange((v) => {
 					this.setValue = v;
@@ -100,7 +103,7 @@ export class CardSearchModal extends Modal {
 					this.scheduleSearch();
 				});
 			this.onEnter(t.inputEl);
-			new SetSuggest(
+			this.setSuggest = new SetSuggest(
 				this.plugin,
 				t.inputEl,
 				() => this.lang,
@@ -120,7 +123,7 @@ export class CardSearchModal extends Modal {
 				dd.setValue(this.lang).onChange((v) => {
 					this.lang = v;
 					this.abbrCache.clear();
-					this.scheduleSearch();
+					void this.onLanguageChanged(v);
 				});
 			});
 
@@ -147,6 +150,32 @@ export class CardSearchModal extends Modal {
 		if (this.nameValue || this.setValue || this.numberValue) {
 			void this.runSearch(true);
 		}
+	}
+
+	/**
+	 * Set names are localized: load the new language's set list for the
+	 * autocomplete and re-label (or drop) a picked set, then search again.
+	 */
+	private async onLanguageChanged(lang: string): Promise<void> {
+		try {
+			await this.setSuggest?.preload(lang);
+		} catch (err) {
+			console.error("[pokemon-collection] set list unavailable", err);
+		}
+		if (lang !== this.lang) return; // switched again meanwhile
+		if (this.pickedSetId) {
+			const entry = this.plugin.api
+				.getSetIndex(lang)
+				.find((e) => e.id === this.pickedSetId);
+			if (entry) {
+				this.setValue = entry.name;
+				// Direct assignment fires no onChange, so the pick survives.
+				if (this.setInput) this.setInput.inputEl.value = entry.name;
+			} else {
+				this.pickedSetId = undefined; // set not available in this language
+			}
+		}
+		this.scheduleSearch();
 	}
 
 	/** Submit a deep search when Enter is pressed in an input. */
