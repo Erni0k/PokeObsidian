@@ -28,6 +28,8 @@ export class CacheService {
 	private metaCache: MetaCache = { cards: {} };
 	private history: PriceHistory = { snapshots: [] };
 	private dir: string;
+	/** Pending debounced write of cache.json. */
+	private apiSaveTimer: number | null = null;
 
 	constructor(plugin: PokemonCollectionPlugin) {
 		this.plugin = plugin;
@@ -68,13 +70,28 @@ export class CacheService {
 		return this.apiCache.entries[key]?.data as T | undefined;
 	}
 
+	/**
+	 * Store a response. The file write is debounced: loading a whole set means
+	 * hundreds of puts, and rewriting cache.json for each would be wasteful.
+	 */
 	async put(key: string, data: unknown): Promise<void> {
 		const rec: CacheRecord = { fetchedAt: new Date().toISOString(), data };
 		this.apiCache.entries[key] = rec;
+		if (this.apiSaveTimer !== null) window.clearTimeout(this.apiSaveTimer);
+		this.apiSaveTimer = window.setTimeout(() => void this.flush(), 2000);
+	}
+
+	/** Write any pending cache.json change now (e.g. on unload). */
+	async flush(): Promise<void> {
+		if (this.apiSaveTimer === null) return;
+		window.clearTimeout(this.apiSaveTimer);
+		this.apiSaveTimer = null;
 		await this.writeJson(CACHE_FILE, this.apiCache);
 	}
 
 	async clearApiCache(): Promise<void> {
+		if (this.apiSaveTimer !== null) window.clearTimeout(this.apiSaveTimer);
+		this.apiSaveTimer = null;
 		this.apiCache = { entries: {} };
 		await this.writeJson(CACHE_FILE, this.apiCache);
 		new Notice("Pokémon Collection: API cache cleared.");

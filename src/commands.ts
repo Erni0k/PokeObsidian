@@ -6,6 +6,7 @@ import { SortModal } from "./ui/SortModal";
 import { AddByLinkModal } from "./ui/AddByLinkModal";
 import { ManualAddModal } from "./ui/ManualAddModal";
 import { BulkAddModal, BulkItem } from "./ui/BulkAddModal";
+import { SetChoice, SetCompletionModal } from "./ui/SetCompletionModal";
 import type { CardSearchQuery } from "./services/ApiService";
 
 /** Registers all plugin commands and holds their implementations. */
@@ -67,6 +68,13 @@ export class CommandController {
 			id: "create-dashboard-note",
 			name: "Create dashboard note",
 			callback: () => this.createDashboardNote(),
+		});
+
+		plugin.addCommand({
+			id: "show-set-completion",
+			name: "Show set completion",
+			callback: () =>
+				new SetCompletionModal(plugin, (c) => void this.createSetNote(c)).open(),
 		});
 
 		plugin.addCommand({
@@ -148,6 +156,45 @@ export class CommandController {
 			file = await vault.create(path, content);
 		}
 
+		if (file instanceof TFile) {
+			await this.plugin.app.workspace.getLeaf(true).openFile(file);
+		}
+	}
+
+	/** Create (or open) a note with a ```pokemon-set block for a set. */
+	private async createSetNote(choice: SetChoice): Promise<void> {
+		const vault = this.plugin.app.vault;
+		const root = this.plugin.settings.collectionFolder.trim();
+		const folder = `${root ? `${root}/` : ""}Sets`;
+		const preferred = this.plugin.settings.preferredLanguage || "en";
+		const tag = [choice.code ?? choice.setId];
+		if (choice.lang !== preferred) tag.push(choice.lang.toUpperCase());
+		const safe = `${choice.name} (${tag.join(", ")})`
+			.replace(/[\\/:*?"<>|#^[\]]/g, " ")
+			.replace(/\s+/g, " ")
+			.trim();
+		const path = `${folder}/${safe}.md`;
+
+		let file = vault.getAbstractFileByPath(path);
+		if (!(file instanceof TFile)) {
+			let acc = "";
+			for (const part of folder.split("/")) {
+				acc = acc ? `${acc}/${part}` : part;
+				if (!vault.getAbstractFileByPath(acc)) {
+					try {
+						await vault.createFolder(acc);
+					} catch {
+						/* may already exist */
+					}
+				}
+			}
+			const lines = [choice.code ?? choice.setId];
+			if (choice.lang !== preferred) lines.push(`lang: ${choice.lang}`);
+			const title = choice.code ? `${choice.name} (${choice.code})` : choice.name;
+			const fence = "```";
+			const content = `# ${title}\n\n${fence}pokemon-set\n${lines.join("\n")}\n${fence}\n`;
+			file = await vault.create(path, content);
+		}
 		if (file instanceof TFile) {
 			await this.plugin.app.workspace.getLeaf(true).openFile(file);
 		}

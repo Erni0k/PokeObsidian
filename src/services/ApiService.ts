@@ -133,9 +133,13 @@ export class ApiService {
 	 * different English card ("sv10-021", Smoliv). Only an exact id match is
 	 * accepted, so localized ids never pick up another language's card.
 	 */
-	async getCard(id: string, lang?: string): Promise<TcgdexCardFull | null> {
+	async getCard(
+		id: string,
+		lang?: string,
+		opts: { force?: boolean } = {}
+	): Promise<TcgdexCardFull | null> {
 		const path = `/cards/${encodeURIComponent(id)}`;
-		const card = await this.get<TcgdexCardFull>(path, lang);
+		const card = await this.get<TcgdexCardFull>(path, lang, { force: opts.force });
 		return card && card.id === id ? card : null;
 	}
 
@@ -159,7 +163,7 @@ export class ApiService {
 	}
 
 	/** Map a short code or raw set id to a set id, or undefined if unknown. */
-	private async resolveSetCode(
+	async resolveSetCode(
 		code: string,
 		lang: string,
 		deep: boolean

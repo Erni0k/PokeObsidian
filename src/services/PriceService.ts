@@ -100,6 +100,11 @@ export class PriceService {
 		return this.provider.currency;
 	}
 
+	/** Per-unit price of a variant from already-fetched card details. */
+	priceFor(card: TcgdexCardFull, variant: string): number | undefined {
+		return this.provider.priceFor(card, variant);
+	}
+
 	/**
 	 * Fetch the current price for a card id, update the meta cache, and return
 	 * the per-unit price (or undefined if unavailable).

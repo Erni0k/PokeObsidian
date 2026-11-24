@@ -201,3 +201,89 @@ th.pokemon-sortable:hover {
 .pokemon-collection-added-count {
 	font-weight: var(--font-semibold);
 }
+
+/* ---- Set completion block ------------------------------------------- */
+.pokemon-set-block {
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	padding: 0.75rem 1rem;
+}
+
+.pokemon-set-title {
+	display: flex;
+	align-items: baseline;
+	gap: 0.6rem;
+	flex-wrap: wrap;
+}
+
+.pokemon-set-title h3 {
+	margin: 0;
+}
+
+.pokemon-set-meta {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.pokemon-set-bars {
+	margin: 0.6rem 0;
+	display: flex;
+	flex-direction: column;
+	gap: 0.3rem;
+}
+
+.pokemon-set-bar-row {
+	display: grid;
+	grid-template-columns: 5rem 1fr auto;
+	align-items: center;
+	gap: 0.6rem;
+}
+
+.pokemon-set-bar-row progress,
+.pokemon-set-loading progress {
+	width: 100%;
+}
+
+.pokemon-set-bar-label {
+	font-weight: 600;
+}
+
+.pokemon-set-bar-value {
+	font-variant-numeric: tabular-nums;
+}
+
+.pokemon-set-toolbar {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: 0.5rem;
+	margin: 0.5rem 0;
+}
+
+.pokemon-set-toggle {
+	display: flex;
+	gap: 0.25rem;
+}
+
+.pokemon-set-summary {
+	font-weight: 600;
+	margin: 0.4rem 0;
+}
+
+.pokemon-set-missing {
+	width: 100%;
+}
+
+.pokemon-set-missing td {
+	vertical-align: middle;
+}
+
+.pokemon-set-thumb img {
+	display: block;
+	border-radius: 3px;
+}
+
+.pokemon-set-price {
+	text-align: right;
+	font-variant-numeric: tabular-nums;
+}

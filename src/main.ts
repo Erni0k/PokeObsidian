@@ -9,9 +9,11 @@ import { CacheService } from "./services/CacheService";
 import { PriceService } from "./services/PriceService";
 import { CollectionService } from "./services/CollectionService";
 import { SetIndexService } from "./services/SetIndexService";
+import { SetCompletionService } from "./services/SetCompletionService";
 import { MarkdownParser } from "./parser/MarkdownParser";
 import { CommandController } from "./commands";
 import { DashboardBlock } from "./ui/DashboardBlock";
+import { SetCompletionBlock } from "./ui/SetCompletionBlock";
 import { registerTableSort } from "./ui/tableSort";
 
 /** Legacy sidebar view type — detached on load so old leaves don't error. */
@@ -25,6 +27,7 @@ export default class PokemonCollectionPlugin extends Plugin {
 	price!: PriceService;
 	collection!: CollectionService;
 	setIndex!: SetIndexService;
+	setCompletion!: SetCompletionService;
 	markdown!: MarkdownParser;
 
 	commands!: CommandController;
@@ -42,6 +45,8 @@ export default class PokemonCollectionPlugin extends Plugin {
 		this.collection = new CollectionService(this);
 		this.setIndex = new SetIndexService(this);
 		await this.setIndex.load();
+		this.setCompletion = new SetCompletionService(this);
+		await this.setCompletion.load();
 
 		// Commands.
 		this.commands = new CommandController(this);
@@ -60,6 +65,16 @@ export default class PokemonCollectionPlugin extends Plugin {
 			}
 		);
 
+		// Set completion: ```pokemon-set DRI``` code blocks.
+		this.registerMarkdownCodeBlockProcessor(
+			"pokemon-set",
+			async (source, el, ctx) => {
+				const child = new SetCompletionBlock(this, el, source);
+				ctx.addChild(child);
+				await child.render();
+			}
+		);
+
 		// Clickable column headers to sort collection tables in Reading view.
 		registerTableSort(this);
 
@@ -69,6 +84,7 @@ export default class PokemonCollectionPlugin extends Plugin {
 	}
 
 	onunload(): void {
+		void this.cache.flush();
 		if (this.autoUpdateHandle !== null) {
 			window.clearInterval(this.autoUpdateHandle);
 			this.autoUpdateHandle = null;
