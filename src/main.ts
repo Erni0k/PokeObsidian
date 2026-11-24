@@ -10,6 +10,7 @@ import { PriceService } from "./services/PriceService";
 import { CollectionService } from "./services/CollectionService";
 import { SetIndexService } from "./services/SetIndexService";
 import { SetCompletionService } from "./services/SetCompletionService";
+import { CsvImportService } from "./services/CsvImportService";
 import { MarkdownParser } from "./parser/MarkdownParser";
 import { CommandController } from "./commands";
 import { DashboardBlock } from "./ui/DashboardBlock";
@@ -29,6 +30,7 @@ export default class PokemonCollectionPlugin extends Plugin {
 	collection!: CollectionService;
 	setIndex!: SetIndexService;
 	setCompletion!: SetCompletionService;
+	csvImport!: CsvImportService;
 	markdown!: MarkdownParser;
 
 	commands!: CommandController;
@@ -48,6 +50,7 @@ export default class PokemonCollectionPlugin extends Plugin {
 		await this.setIndex.load();
 		this.setCompletion = new SetCompletionService(this);
 		await this.setCompletion.load();
+		this.csvImport = new CsvImportService(this);
 
 		// Commands.
 		this.commands = new CommandController(this);

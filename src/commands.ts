@@ -14,6 +14,9 @@ import {
 	TradeCandidatesModal,
 } from "./ui/ListModals";
 import type { ListType, TradeCandidate } from "./services/CollectionService";
+import { CsvImportModal, ExportScopeModal, ImportOutcome, ImportPlan } from "./ui/CsvModals";
+import { EXPORT_COLUMNS, readTable } from "./services/CsvImportService";
+import { toCsv } from "./csv";
 import type { CardSearchQuery } from "./services/ApiService";
 
 /** Registers all plugin commands and holds their implementations. */
@@ -107,6 +110,18 @@ export class CommandController {
 						if (file) void plugin.app.workspace.getLeaf(true).openFile(file);
 					});
 				}).open(),
+		});
+
+		plugin.addCommand({
+			id: "export-csv",
+			name: "Export collection to CSV",
+			callback: () => this.exportCsvCommand(),
+		});
+
+		plugin.addCommand({
+			id: "import-csv",
+			name: "Import cards from CSV",
+			callback: () => this.importCsvCommand(),
 		});
 
 		plugin.addCommand({
@@ -375,6 +390,164 @@ export class CommandController {
 		}
 		const content = `---\npokemon-list: ${type}\n---\n\n# ${safe}\n\n${this.plugin.markdown.renderSection([])}\n`;
 		return vault.create(path, content);
+	}
+
+	// --- CSV export / import -------------------------------------------------
+
+	private exportCsvCommand(): void {
+		const active = this.plugin.app.workspace.getActiveFile();
+		const run = (scope: "all" | TFile): void => void this.exportCsv(scope);
+		if (active && active.extension === "md") {
+			void this.plugin.app.vault.cachedRead(active).then((c) => {
+				if (this.plugin.markdown.hasSection(c)) {
+					new ExportScopeModal(this.plugin.app, active, run).open();
+				} else run("all");
+			});
+		} else run("all");
+	}
+
+	/** Write every card in scope to `<folder>/Exports/…csv` (our own format). */
+	async exportCsv(scope: "all" | TFile): Promise<TFile | null> {
+		const md = this.plugin.markdown;
+		const notes =
+			scope === "all"
+				? await this.plugin.collection.scanNotes()
+				: [{ file: scope, entries: md.parseEntries(await this.plugin.app.vault.read(scope)) }];
+		const rows: string[][] = [[...EXPORT_COLUMNS]];
+		for (const { file, entries } of notes) {
+			for (const e of entries) {
+				rows.push([
+					e.id,
+					e.name,
+					e.setName,
+					this.setCodeFor(e.id),
+					e.number,
+					String(e.variant),
+					e.language,
+					String(e.quantity),
+					e.price !== undefined ? e.price.toFixed(2) : "",
+					"", // paid: no Paid column in the table yet
+					e.condition,
+					e.grade ?? "",
+					file.path,
+				]);
+			}
+		}
+		if (rows.length === 1) {
+			new Notice("No cards to export.");
+			return null;
+		}
+
+		const vault = this.plugin.app.vault;
+		const root = this.plugin.settings.collectionFolder.trim();
+		const folder = `${root ? `${root}/` : ""}Exports`;
+		let acc = "";
+		for (const part of folder.split("/")) {
+			acc = acc ? `${acc}/${part}` : part;
+			if (!vault.getAbstractFileByPath(acc)) {
+				try {
+					await vault.createFolder(acc);
+				} catch {
+					/* may already exist */
+				}
+			}
+		}
+		const d = new Date();
+		const pad = (n: number): string => String(n).padStart(2, "0");
+		const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+		const base = scope === "all" ? "pokemon-collection" : scope.basename;
+		const path = `${folder}/${base} ${stamp}.csv`;
+		// BOM so Excel reads UTF-8 names (é, ★) correctly.
+		const file = await vault.create(path, `﻿${toCsv(rows)}`);
+		new Notice(`Exported ${rows.length - 1} card row(s) to ${path}.`, 8000);
+		return file;
+	}
+
+	/** Short set code for a card id ("sv10-021" → "DRI"), else the set id. */
+	private setCodeFor(id: string): string {
+		if (!id || id.startsWith("manual-") || id.includes("|")) return "";
+		const setId = this.plugin.api.setIdFromCardId(id);
+		const index = this.plugin.setIndex;
+		const entry =
+			index.allSets("en").find((s) => s.id === setId) ??
+			index.allSets().find((s) => s.id === setId);
+		return entry?.abbreviation ?? setId;
+	}
+
+	private importCsvCommand(): void {
+		const app = this.plugin.app;
+		const csvs = app.vault.getFiles().filter((f) => f.extension.toLowerCase() === "csv");
+		if (!csvs.length) {
+			new Notice("No .csv files in the vault. Copy the export file into your vault first.");
+			return;
+		}
+		const active = app.workspace.getActiveFile();
+		const target = active && active.extension === "md" ? active : null;
+		new NotePickerModal(app, csvs, "Import which CSV file?", (file) => {
+			void app.vault.read(file).then((text) => {
+				const table = readTable(text);
+				if (!table.headers.length || !table.rows.length) {
+					new Notice(`${file.name} has no rows.`);
+					return;
+				}
+				new CsvImportModal(this.plugin, file, table, target, (plan) => this.runImport(plan)).open();
+			});
+		}).open();
+	}
+
+	/** Build entries for an import plan and write them, one write per note. */
+	private async runImport(plan: ImportPlan): Promise<ImportOutcome> {
+		const csv = this.plugin.csvImport;
+		const exact = plan.presetId === "ours";
+		const byNote = new Map<string, BulkItem[]>();
+		const add = (path: string, entry: CollectionEntry): void => {
+			const list = byNote.get(path) ?? [];
+			list.push({ entry, qty: entry.quantity });
+			byNote.set(path, list);
+		};
+		const pathFor = (note: string): string =>
+			plan.original && note ? (note.endsWith(".md") ? note : `${note}.md`) : plan.target.path;
+
+		let manual = 0;
+		for (const r of plan.result.resolved) {
+			const entry = await csv.entryFor(r, plan.presetId);
+			if (r.method === "manual-id") manual++;
+			add(pathFor(r.fields.note), entry);
+		}
+		if (plan.unresolved === "manual") {
+			for (const u of plan.result.unresolved) {
+				if (!u.fields.name) continue;
+				const keepId = exact && u.fields.id ? u.fields.id : undefined;
+				add(pathFor(u.fields.note), await csv.manualEntry(u.fields, plan.presetId, keepId));
+				manual++;
+			}
+		}
+
+		const vault = this.plugin.app.vault;
+		let added = 0;
+		for (const [path, items] of byNote) {
+			let file = vault.getAbstractFileByPath(path);
+			if (!(file instanceof TFile)) {
+				const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+				let acc = "";
+				for (const part of dir ? dir.split("/") : []) {
+					acc = acc ? `${acc}/${part}` : part;
+					if (!vault.getAbstractFileByPath(acc)) {
+						try {
+							await vault.createFolder(acc);
+						} catch {
+							/* may already exist */
+						}
+					}
+				}
+				file = await vault.create(path, "");
+			}
+			if (file instanceof TFile) {
+				await this.insertEntries(file, items);
+				added += items.length;
+			}
+		}
+		return { added, manual, notes: byNote.size };
 	}
 
 	// --- Add card -----------------------------------------------------------

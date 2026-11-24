@@ -364,3 +364,31 @@ a.pokemon-collection-top-name:hover {
 .pokemon-card-history-modal {
 	width: min(720px, 95vw);
 }
+
+/* ---- CSV import ------------------------------------------------------- */
+.pokemon-csv-modal {
+	width: min(760px, 95vw);
+}
+
+.pokemon-csv-mapping {
+	margin: 0.5rem 0;
+}
+
+.pokemon-csv-mapping summary,
+.pokemon-csv-preview summary {
+	cursor: pointer;
+	font-weight: 600;
+}
+
+.pokemon-csv-preview ul {
+	max-height: 200px;
+	overflow-y: auto;
+	font-size: var(--font-ui-smaller);
+}
+
+.pokemon-csv-report {
+	max-height: 260px;
+	overflow: auto;
+	font-size: var(--font-ui-smaller);
+	white-space: pre-wrap;
+}
