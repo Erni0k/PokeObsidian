@@ -13,6 +13,13 @@ Run **Create dashboard note** to create (or open) `Pokemon/Pokémon Dashboard.md
 
 The block has no options. Its content is calculated each time the note is opened.
 
+### Buttons
+
+| Button | What it does |
+| --- | --- |
+| **Update prices** | Fetches current prices for every collection note in the collection folder — the same as the *Update all collection prices* command, including a new value snapshot — then redraws the dashboard. |
+| **Refresh** | Redraws the dashboard from the prices already in your notes. No network requests. |
+
 ## What it shows
 
 ### Price status
@@ -47,5 +54,5 @@ Statistics count only **collection** notes; wishlists and trade lists have their
 
 ## Tips
 
-- The value chart only grows when you run **Update all collection prices**. Set an *Auto-update interval* if you want this to happen automatically.
+- The value chart only grows when prices are updated (the **Update prices** button or the *Update all collection prices* command). Set an *Auto-update interval* if you want this to happen automatically.
 - The dashboard uses the **collection folder** setting. If it shows "No cards found", check that your notes are inside that folder (or clear the setting to scan the whole vault).

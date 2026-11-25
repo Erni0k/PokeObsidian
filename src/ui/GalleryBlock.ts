@@ -9,6 +9,7 @@ import {
 	isLatinName,
 } from "../cardmarket";
 import { formatMoney, isStale, timeAgo } from "../currency";
+import { priceButton } from "./DashboardBlock";
 
 export type GallerySource = "this" | "folder";
 export type GallerySort = "number" | "price" | "name";
@@ -153,7 +154,22 @@ export class GalleryBlock extends MarkdownRenderChild {
 
 		const head = root.createDiv({ cls: "pokemon-gallery-head" });
 		const title = head.createDiv({ cls: "pokemon-gallery-title" });
-		const refresh = head.createEl("button", { text: "Refresh" });
+		const actions = head.createDiv({ cls: "pokemon-collection-actions" });
+		const folder = this.opts.source === "folder";
+		priceButton(
+			actions,
+			folder
+				? "Fetch current prices for every collection note"
+				: "Fetch current prices for the cards in this note",
+			async () => {
+				const file = this.plugin.app.vault.getAbstractFileByPath(this.sourcePath);
+				if (folder) await this.plugin.commands.updateAllPrices();
+				else if (file instanceof TFile) await this.plugin.commands.updateFilePrices(file);
+				await this.render();
+			}
+		);
+		const refresh = actions.createEl("button", { text: "Refresh" });
+		refresh.title = "Redraw with the prices already in your notes";
 		refresh.onclick = () => void this.render();
 		const body = root.createDiv();
 

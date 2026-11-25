@@ -46,7 +46,9 @@ Cards with a grade (`PSA 10`, `CGC 9.5`, …) are **never priced automatically**
 | **Update current note prices** | Every row in the current note |
 | **Update all collection prices** | Every collection note in the collection folder, and records a value snapshot |
 
-Each printing is fetched once per run, even if it appears in many rows or notes. Wishlist and trade notes are re-priced as well, but only cards in *collection* notes count towards the snapshot value.
+The **Update prices** buttons on the [dashboard](dashboard.md#buttons) and the [gallery](gallery.md#basic-use) do the same without the command palette. The **Refresh** buttons only redraw a view with the prices already in your notes. The set block's **Refresh prices** reloads prices for that set's missing-cards list, not for your table rows.
+
+Each printing is fetched once per run, even if it appears in many rows or notes. Starting a second run while one is in progress is ignored. Wishlist and trade notes are re-priced as well, but only cards in *collection* notes count towards the snapshot value.
 
 Set **Auto-update interval** to a number of minutes to run *Update all collection prices* automatically while Obsidian is open (`0` = off).
 

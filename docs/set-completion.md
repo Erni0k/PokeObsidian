@@ -50,6 +50,6 @@ Switch between the lists with the **Regular** and **Master** buttons.
 
 Building a set's list requires the details of every card in the set, so the first load takes a while (a progress bar is shown). The result is cached in `set-completion.json` and reused, so later views are instant and work offline.
 
-Which cards you own is re-read from your collection tables every time the note is displayed, so newly added cards appear immediately. Click **Refresh prices** to reload the set from TCGdex for current prices. The block also tells you when its prices are stale or in a different currency than your current price source.
+Which cards you own is re-read from your collection tables every time the note is displayed, so newly added cards appear immediately. Click **Refresh prices** to reload the set from TCGdex for current prices of the missing cards and the cost to complete. This does not change the prices in your collection tables — use **Update prices** on the [dashboard](dashboard.md#buttons) for that. The block also tells you when its prices are stale or in a different currency than your current price source.
 
 If some cards could not be loaded, the block says so and guesses their variants. Click **Refresh prices** to try again.

@@ -2,6 +2,15 @@
 
 All notable changes to Pokemon Collection Manager. Versions follow [semantic versioning](https://semver.org/); each version is a [GitHub release](https://github.com/Erni0k/PokeObsidian/releases).
 
+## [Unreleased]
+
+### Added
+- **Update prices** button on the dashboard and in the gallery. The existing **Refresh** buttons only redraw the view with the prices already in your notes; the new button fetches current prices first (the whole collection on the dashboard and in folder galleries, just the note's cards in a note gallery).
+
+### Fixed
+- Clicking a price update twice no longer starts two updates at the same time.
+- The set block's **Refresh prices** tooltip now explains that it only refreshes the missing-cards list, not your table prices.
+
 ## [1.1.1] — 2026-11-25
 
 ### Added

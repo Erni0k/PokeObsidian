@@ -80,6 +80,12 @@
 	gap: 0.5rem;
 }
 
+.pokemon-collection-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.4rem;
+}
+
 .pokemon-collection-stats {
 	display: grid;
 	grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));

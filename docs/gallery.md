@@ -9,7 +9,12 @@ Show your cards as images — a responsive grid, or 3×3 binder pages — anywhe
 ```
 ````
 
-Without options, the gallery shows the cards of **the note it is in** as a grid, ordered by set and number. The header shows the number of cards and their total value. The gallery refreshes automatically when the cards change; there is also a **Refresh** button.
+Without options, the gallery shows the cards of **the note it is in** as a grid, ordered by set and number. The header shows the number of cards and their total value. The gallery redraws automatically when the cards change.
+
+The header has two buttons:
+
+- **Update prices** fetches current prices for the cards shown. With `source: this` that is the cards in this note; with `source: folder` it updates every collection note, like *Update all collection prices*.
+- **Refresh** redraws the gallery from the prices already in your notes, without network requests.
 
 Each tile shows the card image, a ×N badge for multiple copies, the price (stale prices highlighted) and links to the card's Cardmarket page.
 

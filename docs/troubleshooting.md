@@ -24,6 +24,9 @@ TCGdex lists the card as holo-only. If your copy really is a different printing,
 
 ## Prices
 
+**I clicked Refresh but the prices didn't change.**
+**Refresh** only redraws the view with the prices already in your notes. Use **Update prices** (dashboard or gallery) or the *Update all collection prices* command to fetch new ones.
+
 **A card has no price.**
 TCGdex has no market data for that printing in the active price source. Some printings (e.g. Shadowless on TCGplayer) are intentionally left unpriced instead of borrowing another printing's price. You can enter the price by hand.
 

@@ -249,7 +249,8 @@ export class SetCompletionBlock extends MarkdownRenderChild {
 			};
 		}
 		const refresh = bar.createEl("button", { text: "Refresh prices" });
-		refresh.title = "Reload every card of the set from TCGdex (slow)";
+		refresh.title =
+			"Reload every card of this set from TCGdex for current prices of the missing cards (slow). To re-price the cards in your notes, use \"Update prices\" on the dashboard.";
 		refresh.onclick = () => void this.loadAndRender(true);
 
 		const summary = body.createDiv({ cls: "pokemon-set-summary" });

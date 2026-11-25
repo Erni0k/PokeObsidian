@@ -25,6 +25,8 @@ export class CommandController {
 	private plugin: PokemonCollectionPlugin;
 	/** Serializes note writes so rapid adds (continuous / bulk) never interleave. */
 	private writeQueue: Promise<void> = Promise.resolve();
+	/** The running "update all prices", so a second click doesn't start another. */
+	private priceUpdate: Promise<void> | null = null;
 
 	constructor(plugin: PokemonCollectionPlugin) {
 		this.plugin = plugin;
@@ -778,9 +780,45 @@ export class CommandController {
 		new Notice("Note prices updated.");
 	}
 
+	/**
+	 * Fetch fresh prices for every row of one note, writing the file directly
+	 * (for buttons in rendered blocks, where there is no editor).
+	 */
+	async updateFilePrices(file: TFile): Promise<void> {
+		const md = this.plugin.markdown;
+		const entries = md.parseEntries(await this.plugin.app.vault.read(file));
+		if (!entries.length) {
+			new Notice("This note has no cards to update.");
+			return;
+		}
+		const notice = new Notice(`Updating ${entries.length} cards…`, 0);
+		try {
+			const market = await this.marketPrices(entries);
+			await this.plugin.app.vault.process(file, (content) => {
+				const updated = this.maybeAutoSort(this.applyPrices(md.parseEntries(content), market));
+				return md.replaceSection(content, updated) ?? content;
+			});
+		} finally {
+			notice.hide();
+		}
+		new Notice("Note prices updated.");
+	}
+
 	// --- Update all + snapshot ---------------------------------------------
 
-	async updateAllPrices(): Promise<void> {
+	/** Fetch fresh prices for every collection note and record a snapshot. */
+	updateAllPrices(): Promise<void> {
+		if (this.priceUpdate) {
+			new Notice("Prices are already being updated…");
+			return this.priceUpdate;
+		}
+		this.priceUpdate = this.runUpdateAllPrices().finally(() => {
+			this.priceUpdate = null;
+		});
+		return this.priceUpdate;
+	}
+
+	private async runUpdateAllPrices(): Promise<void> {
 		const md = this.plugin.markdown;
 		const files = await this.plugin.collection.getCollectionFiles();
 		if (!files.length) {
