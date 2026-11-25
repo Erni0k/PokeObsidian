@@ -9,7 +9,7 @@ All commands are available from the command palette (`Ctrl/Cmd + P`) under **Pok
 | **Add card** | Search TCGdex and add a card to the current note. → [Adding cards](adding-cards.md#search) |
 | **Add card from Cardmarket link** | Paste a Cardmarket URL; the search opens pre-filled. → [Cardmarket link](adding-cards.md#from-a-cardmarket-link) |
 | **Add card manually** | Add a card TCGdex doesn't have. → [Manual cards](adding-cards.md#manual-cards) |
-| **Bulk add cards from list** | Add many cards from `CODE NUMBER [xQTY] [variant] [condition] [grade]` lines. → [Bulk add](adding-cards.md#bulk-add) |
+| **Bulk add cards from list** | Add many cards from `CODE NUMBER [xQTY] [variant] [condition] [grade] [language]` lines, e.g. `sv7 055 JA`. → [Bulk add](adding-cards.md#bulk-add) |
 
 ## Prices
 

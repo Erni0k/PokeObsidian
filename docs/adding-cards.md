@@ -7,7 +7,7 @@ There are five ways to add cards. All of them write to the **active note**, so o
 | [Search](#search) | Everyday use: find a card by name, set or number |
 | [Set code + number](#set-code--number) | The fastest entry when you have the card in hand |
 | [Cardmarket link](#from-a-cardmarket-link) | Cards you found or bought on Cardmarket |
-| [Bulk add](#bulk-add) | Many cards at once from a typed or pasted list |
+| [Bulk add](#bulk-add) | Many cards at once from a typed or pasted list, in any mix of languages |
 | [Manual card](#manual-cards) | Cards TCGdex doesn't know |
 
 ## Search
@@ -104,5 +104,12 @@ A row is identified by **card + variant + condition + grade**. Adding the same c
 ## Languages
 
 TCGdex has data in 16 languages: `en`, `fr`, `de`, `es`, `it`, `pt`, `pt-br`, `nl`, `pl`, `ru`, `ja`, `ko`, `zh-cn`, `zh-tw`, `id`, `th`. The availability of cards, images and prices varies by language — English data is the most complete.
+
+How to pick the language when adding:
+
+- **Search window** — the **Language** dropdown.
+- **Bulk add** — a language code at the end of a line, e.g. `sv7 055 JA`; lines without one use your *Preferred language*.
+
+Asian releases have their own sets and set ids, which are not the same as the English ones even when the code looks similar: Japanese `SV7` is *Stellar Miracle*, while the English `sv07` is *Stellar Crown*, and Japanese `SV10` and English `sv10` are different sets too. Always add a card in the language it was printed in.
 
 Cardmarket links are always built from the English version of a card, because Cardmarket uses English names. For cards that only exist in Japanese or another language, the plugin links to a Cardmarket search for the Pokémon's English name instead, or shows no link when no English name can be found (for example some Japanese trainer cards).

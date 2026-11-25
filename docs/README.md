@@ -28,6 +28,7 @@ Welcome! These guides cover every feature of the plugin. If you are new, start w
 - [Data, network and privacy](data-and-privacy.md)
 - [Troubleshooting and FAQ](troubleshooting.md)
 - [Development](development.md)
+- [Changelog](../CHANGELOG.md)
 
 ## Glossary
 

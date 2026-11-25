@@ -15,14 +15,14 @@ Card data, images and prices come from the free, open [TCGdex API](https://tcgde
 ## Highlights
 
 - **Your data stays Markdown.** Every collection is an ordinary table in an ordinary note. Edit it by hand, sync it, version it — the plugin only touches the region between its own markers.
-- **Fast card entry.** Search by name, jump straight to a card with its set code and number (`DRI 062`), paste a Cardmarket link, or bulk-add a whole list in one go.
+- **Fast card entry.** Search by name, jump straight to a card with its set code and number (`DRI 062`), paste a Cardmarket link, or bulk-add a whole list in one go — even mixing languages (`sv7 055 JA`).
 - **Real variants.** Only the printings a card actually has are offered (Normal, Reverse Holo, Holo, 1st Edition, Shadowless, stamped, jumbo …), plus free-text custom variants.
 - **Market prices.** Cardmarket (EUR) or TCGplayer (USD), priced per variant and adjusted for condition. Graded slabs (PSA, CGC, BGS …) keep your own price.
 - **Set completion.** Regular and master-set progress, the missing cards and the cost to complete.
 - **Dashboard, gallery and price history.** Collection value over time, most valuable cards, biggest movers, breakdowns by set, rarity and condition, a binder view and per-card price charts.
 - **Wishlist and trade lists.** Separate lists with their own totals, spare-copy detection and one-step moves into your collection.
 - **CSV import and export.** Round-trips your own exports and reads Collectr, TCGplayer and Cardmarket files.
-- **16 languages, offline-friendly, mobile-ready.** Responses are cached and reused offline, and all requests go through Obsidian's own network API.
+- **16 languages, offline-friendly, mobile-ready.** Japanese and other non-English cards are supported, including their own sets. Responses are cached and reused offline, and all requests go through Obsidian's own network API.
 
 ## Quick start
 
@@ -62,6 +62,7 @@ The full walkthrough is in **[Getting started](docs/getting-started.md)**.
 | [Data, network and privacy](docs/data-and-privacy.md) | Which files are stored and which services are contacted |
 | [Troubleshooting and FAQ](docs/troubleshooting.md) | Common problems and answers |
 | [Development](docs/development.md) | Building from source and the code architecture |
+| [Changelog](CHANGELOG.md) | What changed in each version |
 
 ## Installation
 
