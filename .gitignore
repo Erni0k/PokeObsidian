@@ -23,3 +23,7 @@ CLAUDE.md
 
 # local planning notes (not shipped)
 docs/improvement-prompts.md
+
+# local tests (kept out of the repo)
+tests/
+vitest.config.mts

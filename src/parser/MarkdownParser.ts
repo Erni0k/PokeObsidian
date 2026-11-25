@@ -1,7 +1,7 @@
 import type PokemonCollectionPlugin from "../main";
 import type { CardKey, CollectionEntry, Variant } from "../types";
 import { cardmarketUrl } from "../cardmarket";
-import { currencyFromText, formatMoney } from "../currency";
+import { currencyFromText, formatMoney, parseMoney } from "../currency";
 import {
 	conditionRank,
 	DEFAULT_CONDITION,
@@ -159,11 +159,9 @@ export class MarkdownParser {
 		return formatMoney(price, currency ?? this.plugin.price.currency);
 	}
 
+	/** "€12.50", "12,50 €", "$1,234.56" → number; blank → undefined. */
 	parsePrice(text: string): number | undefined {
-		const cleaned = text.replace(/[^0-9.,-]/g, "").replace(",", ".");
-		if (!cleaned) return undefined;
-		const n = Number.parseFloat(cleaned);
-		return Number.isFinite(n) ? n : undefined;
+		return parseMoney(text);
 	}
 
 	// --- section discovery --------------------------------------------------

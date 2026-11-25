@@ -22,6 +22,24 @@ export function currencyFromText(text: string): string | undefined {
 	return undefined;
 }
 
+/**
+ * A money amount from text: "$1,240.00", "1.240,00 €", "12,5", "12.5" →
+ * number; blank / no digits → undefined. With both separators, whichever
+ * comes last is the decimal one; a lone comma is decimal only before 1–2
+ * digits ("12,50"), otherwise a thousands separator ("1,240").
+ */
+export function parseMoney(raw: string): number | undefined {
+	let t = raw.replace(/[^\d.,-]/g, "");
+	if (!/\d/.test(t)) return undefined;
+	if (t.includes(",") && t.includes(".")) {
+		t = t.lastIndexOf(",") > t.lastIndexOf(".") ? t.replace(/\./g, "").replace(",", ".") : t.replace(/,/g, "");
+	} else if (t.includes(",")) {
+		t = /,\d{1,2}$/.test(t) ? t.replace(",", ".") : t.replace(/,/g, "");
+	}
+	const n = Number.parseFloat(t);
+	return Number.isFinite(n) ? n : undefined;
+}
+
 /** "just now", "5 min ago", "3 h ago", "2 days ago". */
 export function timeAgo(iso: string | undefined, now = Date.now()): string {
 	if (!iso) return "never";

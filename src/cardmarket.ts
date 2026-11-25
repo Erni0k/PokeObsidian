@@ -86,8 +86,10 @@ export function parseCardmarketUrl(url: string): CardmarketLinkInfo | null {
 	if (single) {
 		const set = deslug(single[1]);
 		const raw = single[2];
-		// Peel off a "{ABBR}{Number}" code suffix (e.g. Furret-DAA136).
-		const code = raw.match(/^(.+?)-([A-Za-z]{2,4})(\d{1,4})$/);
+		// Peel off a "{ABBR}{Number}" code suffix (e.g. Furret-DAA136), incl.
+		// promo codes with digits and a dash before the number
+		// (Pikachu-BOO23PAL-062).
+		const code = raw.match(/^(.+?)-([A-Za-z][A-Za-z0-9]{1,9}?)-?(\d{1,4})$/);
 		if (code) {
 			return {
 				set,

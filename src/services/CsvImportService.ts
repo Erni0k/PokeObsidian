@@ -1,7 +1,7 @@
 import type PokemonCollectionPlugin from "../main";
 import type { CollectionEntry, TcgdexCardFull } from "../types";
 import { parseCsv } from "../csv";
-import { currencyFromText } from "../currency";
+import { currencyFromText, parseMoney } from "../currency";
 import { cardmarketUrl, slug } from "../cardmarket";
 import { normalizeCondition, normalizeGrade, parseCondition } from "../condition";
 import { baseType, defaultVariantForCard, resolveVariant, variantOptions } from "../variants";
@@ -389,19 +389,7 @@ export function readRow(
 	};
 }
 
-/** "$1,240.00", "1.240,00 €", "12.5" → number; blank/text → undefined. */
-export function parseMoney(raw: string): number | undefined {
-	let t = raw.replace(/[^\d.,-]/g, "");
-	if (!t) return undefined;
-	if (t.includes(",") && t.includes(".")) {
-		// Whichever comes last is the decimal separator.
-		t = t.lastIndexOf(",") > t.lastIndexOf(".") ? t.replace(/\./g, "").replace(",", ".") : t.replace(/,/g, "");
-	} else if (t.includes(",")) {
-		t = /,\d{1,2}$/.test(t) ? t.replace(",", ".") : t.replace(/,/g, "");
-	}
-	const n = Number.parseFloat(t);
-	return Number.isFinite(n) ? n : undefined;
-}
+export { parseMoney };
 
 export type ResolveMethod = "id" | "manual-id" | "set+number" | "name+set";
 
