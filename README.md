@@ -36,7 +36,7 @@ Card data, images and prices come from the free, open [TCGdex API](https://tcgde
 
 ## Quick start
 
-1. Install the plugin (see [Installation](#installation)) and enable it in **Settings → Community plugins**.
+1. In Obsidian, open **Settings → Community plugins → Browse**, search for **Pokemon Collection Manager**, then install and enable it (more options under [Installation](#installation)).
 2. Create a note inside the `Pokemon` folder (the default collection folder — configurable).
 3. Open the command palette and run **Pokemon Collection Manager: Add card**.
 4. Type `DRI 062` (or a card name), pick the card, choose the variant and condition, and click **Add to note**.
@@ -76,9 +76,15 @@ The full walkthrough is in **[Getting started](docs/getting-started.md)**.
 
 ## Installation
 
-### From Community plugins
+### From Community plugins (recommended)
 
-The plugin is being prepared for the Obsidian Community plugins directory. Once it is listed, open **Settings → Community plugins → Browse**, search for *Pokemon Collection Manager*, then click **Install** and **Enable**.
+Pokemon Collection Manager is available in the official Obsidian Community plugins directory:
+
+1. Open **Settings → Community plugins** and turn off *Restricted mode* if it is on.
+2. Click **Browse** and search for **Pokemon Collection Manager**.
+3. Click **Install**, then **Enable**.
+
+Updates arrive through Obsidian's built-in plugin updater (**Settings → Community plugins → Check for updates**).
 
 ### Manually
 

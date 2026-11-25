@@ -4,7 +4,7 @@ This guide takes you from installation to a working collection with a dashboard 
 
 ## 1. Install and enable
 
-Install the plugin from **Settings → Community plugins → Browse** (search for *Pokemon Collection Manager*), or install it manually — see [Installation](../README.md#installation). Then enable it under **Settings → Community plugins**.
+The plugin is in the official Community plugins directory. Open **Settings → Community plugins** (turn off *Restricted mode* if needed), click **Browse**, search for **Pokemon Collection Manager**, then click **Install** and **Enable**. Manual installation is described under [Installation](../README.md#installation).
 
 Requirements: Obsidian **1.5.0** or newer, on desktop or mobile, with an internet connection for card lookups.
 
