@@ -6,6 +6,7 @@ Track your Pokémon Trading Card Game collection in plain Markdown, right inside
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Obsidian 1.5.0+](https://img.shields.io/badge/Obsidian-1.5.0%2B-7c3aed)
 ![Desktop and mobile](https://img.shields.io/badge/platform-desktop%20%7C%20mobile-lightgrey)
+[![Support on Ko-fi](https://img.shields.io/badge/Ko--fi-support-ff5e5b?logo=ko-fi&logoColor=white)](https://ko-fi.com/erniok)
 
 Card data, images and prices come from the free, open [TCGdex API](https://tcgdex.dev/). No account or API key is needed.
 
@@ -90,6 +91,8 @@ Cardmarket links are only opened when you click them. Nothing about your vault o
 ## Support and contributing
 
 Bug reports and feature requests are welcome in [GitHub Issues](https://github.com/Erni0k/PokeObsidian/issues). Please include your Obsidian version, platform and, if possible, the card or set involved. To build from source, see [Development](docs/development.md).
+
+The plugin is free and always will be. If it helps you keep track of your cards, you can support its development on **[Ko-fi](https://ko-fi.com/erniok)** ☕
 
 ## License and disclaimer
 
