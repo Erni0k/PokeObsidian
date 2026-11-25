@@ -2,6 +2,10 @@
 
 Your collection is stored as a Markdown table inside your notes. The table **is** your data: there is no hidden database. Everything else the plugin keeps (images, rarity, price history) is a cache that can be rebuilt.
 
+In Reading view a table looks like this:
+
+<img src="images/collection-table.png" alt="A collection table with card thumbnails, set, number, variant, condition and language" width="620">
+
 ## Format
 
 ```markdown

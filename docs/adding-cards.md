@@ -12,6 +12,8 @@ There are five ways to add cards. All of them write to the **active note**, so o
 
 ## Search
 
+<img src="images/add-card.png" alt="The Add card window searching for Pikachu" width="420">
+
 Run **Add card**. The search window has four fields:
 
 - **Card name** — any part of the name (`pika`, `Charizard ex`).

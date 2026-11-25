@@ -2,6 +2,8 @@
 
 The dashboard summarises every collection note in your collection folder. It lives inside a note as a code block, so you can place it anywhere, combine it with your own notes, or have several dashboards.
 
+<img src="images/dashboard.png" alt="The dashboard: statistics, collection value over time and the most valuable cards" width="620">
+
 ## Creating a dashboard
 
 Run **Create dashboard note** to create (or open) `Pokemon/Pokémon Dashboard.md`, or add this block to any note:

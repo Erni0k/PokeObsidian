@@ -10,6 +10,10 @@ Track your Pokémon Trading Card Game collection in plain Markdown, right inside
 
 Card data, images and prices come from the free, open [TCGdex API](https://tcgdex.dev/). No account or API key is needed.
 
+<p align="center">
+  <img src="docs/images/dashboard.png" alt="The dashboard: collection statistics, value over time and the most valuable cards" width="620">
+</p>
+
 ---
 
 ## Highlights
@@ -23,6 +27,12 @@ Card data, images and prices come from the free, open [TCGdex API](https://tcgde
 - **Wishlist and trade lists.** Separate lists with their own totals, spare-copy detection and one-step moves into your collection.
 - **CSV import and export.** Round-trips your own exports and reads Collectr, TCGplayer and Cardmarket files.
 - **16 languages, offline-friendly, mobile-ready.** Japanese and other non-English cards are supported, including their own sets. Responses are cached and reused offline, and all requests go through Obsidian's own network API.
+
+## Screenshots
+
+| Add cards by name, set or set code + number | Your collection is a plain Markdown table |
+| :---: | :---: |
+| <img src="docs/images/add-card.png" alt="The Add card window searching for Pikachu" width="400"> | <img src="docs/images/collection-table.png" alt="A collection table with card thumbnails, set, number, variant, condition and language" width="400"> |
 
 ## Quick start
 
