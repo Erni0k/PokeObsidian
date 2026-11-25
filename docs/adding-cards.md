@@ -53,7 +53,7 @@ The plugin reads the card name, set and number from the link and opens the searc
 Run **Bulk add cards from list** and enter one card per line:
 
 ```
-CODE NUMBER [xQTY] [variant] [condition] [grade]
+CODE NUMBER [xQTY] [variant] [condition] [grade] [language]
 ```
 
 Examples:
@@ -64,6 +64,7 @@ DRI 062 x2 reverse LP
 PAF 091 holo PSA10
 sv10-021 3x
 swsh12.5 GG01 holo
+sv7 055 JA
 # lines starting with # are ignored
 ```
 
@@ -71,6 +72,9 @@ swsh12.5 GG01 holo
 - **Variant** is free text (`reverse`, `holo`, `holo 1st`, `Reverse Holo` …) and is matched to the card's real printings. If the card has no such printing, the text is kept as a custom variant and you get a warning.
 - **Condition** is one of `NM`, `LP`, `MP`, `HP`, `DMG` (default `NM`).
 - **Grade** is a grading company and number, e.g. `PSA10`, `CGC 9.5`, `BGS 9`.
+- **Language** is a TCGdex language code such as `JA`, `FR` or `ZH-TW` (default: your *Preferred language*). Set ids differ per language — Japanese `SV7` (*Stellar Miracle*) is not an English set — so mark non-English cards with their language. You can mix languages in one list.
+
+If a set code isn't found in the line's language, the error tells you which language does have it (e.g. *it exists in JA (ステラミラクル): add JA to the line*), or suggests the zero-padded English id (`sv7` → `sv07`).
 
 Click **Add all**. Recognised cards are inserted together in one write. Lines that could not be resolved stay in the box with the reason, so you can fix and resubmit them.
 

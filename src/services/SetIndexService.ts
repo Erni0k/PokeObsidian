@@ -128,6 +128,30 @@ export class SetIndexService {
 		return undefined;
 	}
 
+	/**
+	 * Indexed languages other than `except` that know `code` as a short code
+	 * or a set id (for "this set only exists in JA" hints).
+	 */
+	findCodeInOtherLanguages(
+		code: string,
+		except: string
+	): { lang: string; entry: SetIndexEntry }[] {
+		const c = code.trim().toUpperCase();
+		if (!c) return [];
+		const out: { lang: string; entry: SetIndexEntry }[] = [];
+		for (const [lang, sets] of Object.entries(this.index)) {
+			if (lang === except) continue;
+			const entry = Object.values(sets).find(
+				(e) =>
+					e.abbreviation === c ||
+					e.abbreviationLocalized === c ||
+					e.id.toUpperCase() === c
+			);
+			if (entry) out.push({ lang, entry });
+		}
+		return out;
+	}
+
 	/** Whether a /sets list was recorded for a language (to diff against). */
 	hasList(lang?: string): boolean {
 		const m = this.index[this.lang(lang)];

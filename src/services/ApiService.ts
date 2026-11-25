@@ -187,6 +187,50 @@ export class ApiService {
 	}
 
 	/**
+	 * Languages other than `lang` in which a set code exists, for a helpful
+	 * "unknown set" message (set ids differ per language: Japanese "SV7" is
+	 * not an English set). Checks the local index, then — for id-like codes —
+	 * the English and Japanese APIs.
+	 */
+	async findSetElsewhere(
+		code: string,
+		lang: string
+	): Promise<{ lang: string; id: string; name: string }[]> {
+		const found = new Map<string, { lang: string; id: string; name: string }>();
+		for (const hit of this.plugin.setIndex.findCodeInOtherLanguages(code, lang)) {
+			found.set(hit.lang, { lang: hit.lang, id: hit.entry.id, name: hit.entry.name });
+		}
+		const lc = code.trim().toLowerCase();
+		if (/\d/.test(lc)) {
+			for (const l of ["en", "ja"]) {
+				if (l === lang || found.has(l)) continue;
+				const set = await this.getSet(lc, l);
+				if (set?.cards?.length && set.id.toLowerCase() === lc) {
+					found.set(l, { lang: l, id: set.id, name: set.name });
+				}
+			}
+		}
+		return [...found.values()];
+	}
+
+	/**
+	 * For an unpadded set id that doesn't exist ("sv7"), the zero-padded one
+	 * that does in `lang` ("sv07", Stellar Crown), if any.
+	 */
+	async paddedSetId(
+		code: string,
+		lang: string
+	): Promise<{ id: string; name: string } | undefined> {
+		const m = code.trim().match(/^([a-z]+)(\d)$/i);
+		if (!m) return undefined;
+		const candidate = `${m[1].toLowerCase()}0${m[2]}`;
+		const set = await this.getSet(candidate, lang);
+		return set?.cards?.length && set.id.toLowerCase() === candidate
+			? { id: set.id, name: set.name }
+			: undefined;
+	}
+
+	/**
 	 * Cards in a set with the given collector number. Matches the set's card
 	 * list leniently ("62" == "062"); if that yields nothing, tries the card id
 	 * directly ("{setId}-{localId}", as typed and TCGdex-padded to 3 digits).

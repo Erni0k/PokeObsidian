@@ -8,6 +8,9 @@ The card is added to the active note. Open (or click into) the note you want to 
 **A set code isn't recognised (e.g. a brand-new set).**
 Run **Refresh Pokémon sets** to download the latest set list, or **Rebuild Pokémon set index** to index every set code at once. Typing the TCGdex set id (`sv10-062`) always works.
 
+**Bulk add says "unknown set code" for a Japanese (or other non-English) card.**
+Set ids are different in every language: Japanese `SV7` is *Stellar Miracle*, while the English `sv07` is *Stellar Crown*. Add the language to the line, e.g. `sv7 055 JA`. The error message names the language that has the set.
+
 **The card I want isn't in the results.**
 - Try the card's language in the **Language** dropdown — some cards exist only in Japanese or other languages.
 - Search by set + number instead of name, or use **Add card from Cardmarket link**.
