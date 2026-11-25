@@ -1,135 +1,98 @@
-# Pokémon Collection Manager for Obsidian
+# Pokemon Collection Manager
 
-Manage a Pokémon TCG collection directly inside your Obsidian vault, powered by the [TCGdex API](https://tcgdex.dev/). Cards are stored as a portable Markdown table; everything else (images, rarity, prices, history) lives in JSON caches next to the plugin.
+Track your Pokémon Trading Card Game collection in plain Markdown, right inside your Obsidian vault — with card search, variant detection, live market prices, set completion, a gallery view and a dashboard.
 
-## Design principles
+[![Latest release](https://img.shields.io/github/v/release/Erni0k/PokeObsidian?sort=semver)](https://github.com/Erni0k/PokeObsidian/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Obsidian 1.5.0+](https://img.shields.io/badge/Obsidian-1.5.0%2B-7c3aed)
+![Desktop and mobile](https://img.shields.io/badge/platform-desktop%20%7C%20mobile-lightgrey)
 
-- **Markdown is the source of truth.** Each collection note holds a Markdown table between hidden markers. You can edit it by hand and nothing breaks.
-- **JSON is only a cache.** Card metadata, market prices and portfolio value snapshots are cached under `.obsidian/plugins/pokemon-collection/`.
-- **Works offline.** API responses are cached with a TTL and reused when the network is unavailable.
-- **Mobile-friendly.** All network calls go through Obsidian's `requestUrl`, so the plugin works on desktop and mobile.
+Card data, images and prices come from the free, open [TCGdex API](https://tcgdex.dev/). No account or API key is needed.
 
-## Features
+---
 
-### Add cards
-Command **“Pokémon Collection: Add card”**:
-1. Search TCGdex by **name**, **number** and/or **set**.
-2. Pick a card, then choose a **variant** — the variants TCGdex flags for that card (Normal, Reverse Holo, Holo, First Edition, Promo) plus a free-text **custom variant** (Full Art, Secret Rare, …).
-3. Set **language**, **quantity** and **price** (auto-filled from Cardmarket).
-4. The card is inserted into the active note. Adding a card that already exists **increments its quantity**.
+## Highlights
 
-The search modal has a **Language** dropdown, so you can search any TCGdex
-language (e.g. `ja` for Japanese, `de`, `fr`, …), not just your default.
+- **Your data stays Markdown.** Every collection is an ordinary table in an ordinary note. Edit it by hand, sync it, version it — the plugin only touches the region between its own markers.
+- **Fast card entry.** Search by name, jump straight to a card with its set code and number (`DRI 062`), paste a Cardmarket link, or bulk-add a whole list in one go.
+- **Real variants.** Only the printings a card actually has are offered (Normal, Reverse Holo, Holo, 1st Edition, Shadowless, stamped, jumbo …), plus free-text custom variants.
+- **Market prices.** Cardmarket (EUR) or TCGplayer (USD), priced per variant and adjusted for condition. Graded slabs (PSA, CGC, BGS …) keep your own price.
+- **Set completion.** Regular and master-set progress, the missing cards and the cost to complete.
+- **Dashboard, gallery and price history.** Collection value over time, most valuable cards, biggest movers, breakdowns by set, rarity and condition, a binder view and per-card price charts.
+- **Wishlist and trade lists.** Separate lists with their own totals, spare-copy detection and one-step moves into your collection.
+- **CSV import and export.** Round-trips your own exports and reads Collectr, TCGplayer and Cardmarket files.
+- **16 languages, offline-friendly, mobile-ready.** Responses are cached and reused offline, and all requests go through Obsidian's own network API.
 
-Two more ways to start an add:
+## Quick start
 
-- **“Add card from Cardmarket link”** — paste a Cardmarket single-card URL
-  and the plugin extracts the name, set and number from it, then opens the
-  same search modal pre-filled so you just pick the variant.
-- **“Add card manually”** (a button in the search modal, or its own
-  command) — for cards TCGdex doesn't have (promo bundles like *Trick or
-  Trade*, some regional printings). No image/auto-price, but the card is
-  still tracked, priced manually and counted in the dashboard.
+1. Install the plugin (see [Installation](#installation)) and enable it in **Settings → Community plugins**.
+2. Create a note inside the `Pokemon` folder (the default collection folder — configurable).
+3. Open the command palette and run **Pokemon Collection Manager: Add card**.
+4. Type `DRI 062` (or a card name), pick the card, choose the variant and condition, and click **Add to note**.
+5. Run **Create dashboard note** to see your collection's statistics and charts.
 
-### Collection table
-The table is written between `<!-- pokemon-collection:start -->` and `<!-- pokemon-collection:end -->` markers, so the plugin only ever touches that region:
+A collection table looks like this — readable without the plugin, and safe to edit by hand:
 
 ```markdown
 <!-- pokemon-collection:start -->
-| Card | Set | Number | Variant | Lang | Qty | Price |
-| --- | --- | --- | --- | --- | --- | --- |
-| [Pikachu](https://www.cardmarket.com/…)<!--k:base1-58:reverse--> | Base Set | 58 | reverse | EN | 2 | €25.41 |
+| Card | Set | Number | Variant | Cond | Grade | Lang | Qty | Price |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| [Pikachu](https://www.cardmarket.com/…)<!--k:sv10-003:reverse:NM--> | Destined Rivals | 003 | reverse | NM |  | EN | 2 | €4.00 |
 <!-- pokemon-collection:end -->
 ```
 
-The card's stable identity (`tcgdexId:variant`) is stored in a hidden HTML
-comment inside the Card cell — invisible in Reading view, so there is no
-technical ID column cluttering the table. If the comment is removed (manual
-edit), the plugin recovers the id from the cache by matching name + set, or
-falls back to a natural key.
+The full walkthrough is in **[Getting started](docs/getting-started.md)**.
 
-### Price updates
-- **Update selected card price** — the row under the cursor.
-- **Update current note prices** — every row in the active note.
-- **Update all collection prices** — every note in the collection folder, and records a portfolio value snapshot for the history chart.
+## Documentation
 
-Prices come from TCGdex's embedded **Cardmarket** data (EUR) via an abstracted `PriceProvider` interface, so other providers can be added later.
+| Guide | What it covers |
+| --- | --- |
+| [Getting started](docs/getting-started.md) | Installation, your first collection note and first card |
+| [Adding cards](docs/adding-cards.md) | Search, set code + number, Cardmarket links, bulk add, manual cards, variants, condition and grade |
+| [The collection table](docs/collection-table.md) | Table format, columns, editing by hand, sorting, thumbnails |
+| [Prices](docs/prices.md) | Price sources, condition multipliers, graded cards, updates, stale prices, price history |
+| [Dashboard](docs/dashboard.md) | The `pokemon-dashboard` block: statistics and charts |
+| [Set completion](docs/set-completion.md) | The `pokemon-set` block: regular and master sets, missing cards, cost to complete |
+| [Gallery and binder](docs/gallery.md) | The `pokemon-gallery` block: card grid and 3×3 binder pages |
+| [Wishlist and trade lists](docs/lists.md) | List types, moving cards, trade candidates |
+| [CSV import and export](docs/csv.md) | Export format, supported apps, column mapping |
+| [Commands](docs/commands.md) | Every command at a glance |
+| [Settings](docs/settings.md) | Every setting and its default |
+| [Data, network and privacy](docs/data-and-privacy.md) | Which files are stored and which services are contacted |
+| [Troubleshooting and FAQ](docs/troubleshooting.md) | Common problems and answers |
+| [Development](docs/development.md) | Building from source and the code architecture |
 
-### Sorting
-- **Sort collection table** — pick a field (name, set, number, variant, language, quantity, price) and direction, applied to the table under the cursor.
-- **Keep table sorted** (setting) — auto-sorts by your chosen field/direction after every add or price update, so you never have to sort manually.
-- **Reading view:** click a column header on a rendered collection table to sort by it on the spot.
+## Installation
 
-### Dashboard
-The dashboard aggregates every collection note in the configured folder and lives **inside a note** via a fenced code block:
+### From Community plugins
 
-````markdown
-```pokemon-dashboard
-```
-````
+The plugin is being prepared for the Obsidian Community plugins directory. Once it is listed, open **Settings → Community plugins → Browse**, search for *Pokemon Collection Manager*, then click **Install** and **Enable**.
 
-Use the **“Create dashboard note”** command to generate one automatically (or add the block to any note yourself). It shows:
+### Manually
 
-- **Statistics:** total cards, unique cards, total value, average value, most expensive card, largest set, sets owned.
-- **Most valuable cards:** top 10 as a visual list — thumbnail, name, price, and a link to the note the card is in.
-- **Charts (Chart.js):** collection value over time, collection by set, collection by rarity, collection growth.
+1. Download `main.js`, `manifest.json` and `styles.css` from the [latest release](https://github.com/Erni0k/PokeObsidian/releases/latest).
+2. Copy them into `<your vault>/.obsidian/plugins/pokemon-collection/` (create the folder if needed).
+3. Reload Obsidian and enable **Pokemon Collection Manager** in **Settings → Community plugins**.
 
-> The old sidebar dashboard view/ribbon icon has been removed in favor of the in-note version; the plugin automatically detaches any leftover sidebar leaf from older installs.
+### With BRAT (beta builds)
 
-## Settings
+Install the [BRAT](https://github.com/TfTHacker/obsidian42-brat) plugin, choose **Add beta plugin** and enter `Erni0k/PokeObsidian`.
 
-| Setting | Default | Notes |
-| --- | --- | --- |
-| Preferred language | `en` | Used for all TCGdex lookups |
-| Currency | `EUR` | Fixed (Cardmarket source) in v1 |
-| Price provider | TCGdex — Cardmarket | Abstracted for future providers |
-| Collection folder | `Pokemon` | Scanned by the dashboard and "update all prices"; blank = whole vault |
-| Default quantity | `1` | Added per card |
-| Auto-update interval | `0` (off) | Minutes between automatic price refreshes |
-| Cache duration | `24` h | Freshness window for API responses |
-| Enable image previews | off | Show card images in modals |
-| Image column in table | on | Embed a card thumbnail as the first table column |
-| Image size | `200` px | Preview width (thumbnails capped at 80 px) |
-| Keep table sorted | off | Auto-sort tables after add / price update |
+## Network use and privacy
 
-## Development
+The plugin needs an internet connection to look up cards and prices. It contacts:
 
-```bash
-npm install
-npm run dev     # watch build → main.js
-npm run build   # type-check + production bundle
-```
+- **`api.tcgdex.net`** — card, set and price data;
+- **`assets.tcgdex.net`** — card images and set symbols, when they are shown.
 
-Then symlink/copy `main.js`, `manifest.json` and `styles.css` into
-`<vault>/.obsidian/plugins/pokemon-collection/` and enable the plugin.
+Cardmarket links are only opened when you click them. Nothing about your vault or your collection is sent anywhere, and there is no telemetry, no account and no ads. Details: [Data, network and privacy](docs/data-and-privacy.md).
 
-## Architecture
+## Support and contributing
 
-```
-src/
-  main.ts                    plugin entry, wiring, code-block/sort registration
-  types.ts                   data models + TCGdex response shapes
-  settings.ts                settings + settings tab
-  commands.ts                command registration & implementations
-  cardmarket.ts               Cardmarket URL build/slug/parse helpers
-  parser/MarkdownParser.ts   read/write + sort the collection table (source of truth)
-  services/
-    ApiService.ts            TCGdex REST client over requestUrl (+ cache)
-    CacheService.ts          cache.json / meta.json / price-history.json
-    PriceService.ts          price provider abstraction (Cardmarket/EUR)
-    CollectionService.ts     folder scan + statistics aggregation
-  ui/
-    CardSearchModal.ts       search step
-    VariantSelectorModal.ts  variant / language / qty / price step
-    AddByLinkModal.ts        paste-a-Cardmarket-link entry point
-    ManualAddModal.ts        manual entry for cards TCGdex doesn't have
-    SortModal.ts             field/direction picker for "Sort collection table"
-    tableSort.ts             clickable column headers in Reading view
-    DashboardBlock.ts        `pokemon-dashboard` code-block lifecycle
-    DashboardRenderer.ts     stats + charts rendering, shared by the block
-    charts.ts                Chart.js wrappers
-```
+Bug reports and feature requests are welcome in [GitHub Issues](https://github.com/Erni0k/PokeObsidian/issues). Please include your Obsidian version, platform and, if possible, the card or set involved. To build from source, see [Development](docs/development.md).
 
-## Roadmap (stretch goals, not in v1)
+## License and disclaimer
 
-CSV import/export, value reports, OCR/barcode scanning, duplicate detection, wishlist & trade lists, deck builder, per-card price history chart, Git sync, bulk add, tags, smart search, per-generation stats, missing cards / set completion %.
+Released under the [MIT License](LICENSE).
+
+This is an unofficial fan project. It is not affiliated with, endorsed or sponsored by Nintendo, Creatures, GAME FREAK, The Pokémon Company, Cardmarket or TCGplayer. Pokémon and all related names are trademarks of their respective owners. Card data and images are provided by [TCGdex](https://tcgdex.dev/).
