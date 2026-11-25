@@ -112,7 +112,7 @@ export class SetSuggest extends AbstractInputSuggest<SetIndexEntry> {
 	renderSuggestion(item: SetIndexEntry, el: HTMLElement): void {
 		const lang = this.getLang();
 		const code = this.code(item, lang);
-		el.createEl("div", {
+		el.createDiv({
 			text: code ? `${item.name} (${code})` : item.name,
 		});
 		const meta: string[] = [item.id];

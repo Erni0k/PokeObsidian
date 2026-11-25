@@ -160,11 +160,11 @@ function renderStats(
 
 	for (const [label, value] of items) {
 		const cell = grid.createDiv({ cls: "pokemon-collection-stat" });
-		cell.createEl("div", {
+		cell.createDiv({
 			cls: "pokemon-collection-stat-value",
 			text: value,
 		});
-		cell.createEl("div", {
+		cell.createDiv({
 			cls: "pokemon-collection-stat-label",
 			text: label,
 		});

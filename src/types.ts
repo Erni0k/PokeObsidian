@@ -17,9 +17,10 @@ export type KnownVariant =
 
 /**
  * A variant is either one of the known TCGdex variants or an arbitrary
- * user-supplied string (e.g. "Full Art", "Secret Rare", "Alt Art").
+ * user-supplied string (e.g. "Full Art", "Secret Rare", "Alt Art"); see
+ * {@link KnownVariant} for the known ones.
  */
-export type Variant = KnownVariant | string;
+export type Variant = string;
 
 /**
  * Row identity: `id:variant:cond` plus `:grade` for graded cards (legacy
@@ -184,7 +185,8 @@ export interface TcgdexCardFull {
 
 /** One concrete printing of a card (type + optional subtype/stamp + pricing). */
 export interface TcgdexVariantDetailed {
-	type: "normal" | "reverse" | "holo" | string;
+	/** "normal", "reverse", "holo", or another type TCGdex may add. */
+	type: string;
 	subtype?: string;
 	stamp?: string[];
 	size?: string;

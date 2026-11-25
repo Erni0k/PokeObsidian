@@ -37,7 +37,7 @@ export class CacheService {
 	constructor(plugin: PokemonCollectionPlugin) {
 		this.plugin = plugin;
 		// manifest.dir is the plugin folder relative to the vault root.
-		this.dir = plugin.manifest.dir ?? ".obsidian/plugins/pokemon-collection";
+		this.dir = plugin.manifest.dir ?? `${plugin.app.vault.configDir}/plugins/${plugin.manifest.id}`;
 	}
 
 	async load(): Promise<void> {

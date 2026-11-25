@@ -35,7 +35,7 @@ export class AddByLinkModal extends Modal {
 				"https://www.cardmarket.com/en/Pokemon/Products/Singles/…"
 			).onChange((v) => (this.url = v));
 			window.setTimeout(() => t.inputEl.focus(), 0);
-			t.inputEl.style.width = "100%";
+			t.inputEl.addClass("pokemon-collection-full-width");
 			t.inputEl.addEventListener("keydown", (ev) => {
 				if (ev.key === "Enter") this.submit();
 			});

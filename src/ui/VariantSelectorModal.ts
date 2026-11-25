@@ -91,7 +91,7 @@ export class VariantSelectorModal extends Modal {
 		contentEl.createEl("h2", { text: this.card.name });
 
 		const meta = contentEl.createDiv({ cls: "pokemon-collection-card-meta" });
-		meta.createEl("span", {
+		meta.createSpan({
 			text: `${this.card.set?.name ?? "?"} · #${this.card.localId ?? "?"} · ${
 				this.card.rarity ?? "—"
 			}`,
@@ -114,7 +114,7 @@ export class VariantSelectorModal extends Modal {
 				cls: "pokemon-collection-preview",
 			});
 			img.src = this.plugin.api.imageUrl(this.card.image, "high") ?? "";
-			img.style.maxWidth = `${this.plugin.settings.imageSize}px`;
+			img.setCssProps({ "--pc-preview-size": `${this.plugin.settings.imageSize}px` });
 		}
 
 		new Setting(contentEl)

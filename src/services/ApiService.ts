@@ -482,12 +482,8 @@ export class ApiService {
 				headers: { Accept: "application/json" },
 				throw: false,
 			});
-			if (res.status < 200 || res.status >= 300) {
-				console.warn(
-					`[pokemon-collection] GET ${url} -> ${res.status}`
-				);
-				return stale();
-			}
+			// Non-2xx (e.g. 404 for an unknown id) is an expected answer, not an error.
+			if (res.status < 200 || res.status >= 300) return stale();
 			const data = res.json as T;
 			await this.plugin.cache.put(cacheKey, data);
 			return data;

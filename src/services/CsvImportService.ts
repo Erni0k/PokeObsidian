@@ -448,7 +448,7 @@ export class CsvImportService {
 
 		let done = 0;
 		let next = 0;
-		const out: (ResolvedRow | UnresolvedRow | SkippedRow)[] = new Array(rows.length);
+		const out = new Array<ResolvedRow | UnresolvedRow | SkippedRow>(rows.length);
 		const worker = async (): Promise<void> => {
 			while (next < rows.length) {
 				const i = next++;

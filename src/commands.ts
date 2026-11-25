@@ -460,7 +460,7 @@ export class CommandController {
 		const base = scope === "all" ? "pokemon-collection" : scope.basename;
 		const path = `${folder}/${base} ${stamp}.csv`;
 		// BOM so Excel reads UTF-8 names (é, ★) correctly.
-		const file = await vault.create(path, `﻿${toCsv(rows)}`);
+		const file = await vault.create(path, `\uFEFF${toCsv(rows)}`);
 		new Notice(`Exported ${rows.length - 1} card row(s) to ${path}.`, 8000);
 		return file;
 	}
@@ -617,8 +617,7 @@ export class CommandController {
 			if (editor) {
 				this.setEditorValue(editor, apply(editor.getValue()));
 			} else {
-				const content = await this.plugin.app.vault.read(file);
-				await this.plugin.app.vault.modify(file, apply(content));
+				await this.plugin.app.vault.process(file, apply);
 			}
 		} catch (err) {
 			console.error("[pokemon-collection] bulk insert failed", err);
@@ -665,7 +664,6 @@ export class CommandController {
 		addQty: number
 	): Promise<void> {
 		try {
-			const md = this.plugin.markdown;
 			const view =
 				this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
 			const editor =
@@ -678,9 +676,9 @@ export class CommandController {
 				const next = this.withEntry(content, entry, addQty);
 				this.setEditorValue(editor, next);
 			} else {
-				const content = await this.plugin.app.vault.read(file);
-				const next = this.withEntry(content, entry, addQty);
-				await this.plugin.app.vault.modify(file, next);
+				await this.plugin.app.vault.process(file, (content) =>
+					this.withEntry(content, entry, addQty)
+				);
 			}
 		} catch (err) {
 			console.error("[pokemon-collection] failed to insert card", err);
@@ -813,10 +811,14 @@ export class CommandController {
 		const uniq = new Set<CardKey>();
 
 		for (const note of notes) {
-			const updated = this.maybeAutoSort(this.applyPrices(note.entries, market));
-			const newContent = md.replaceSection(note.content, updated);
-			if (newContent && newContent !== note.content) {
-				await this.plugin.app.vault.modify(note.file, newContent);
+			let updated = this.maybeAutoSort(this.applyPrices(note.entries, market));
+			const changed = md.replaceSection(note.content, updated);
+			if (changed && changed !== note.content) {
+				// Re-apply to the current text: the note may have changed while prices loaded.
+				await this.plugin.app.vault.process(note.file, (content) => {
+					updated = this.maybeAutoSort(this.applyPrices(md.parseEntries(content), market));
+					return md.replaceSection(content, updated) ?? content;
+				});
 			}
 			// Prices of every list are refreshed (wishlist cost needs them),
 			// but the portfolio value counts only what you own.

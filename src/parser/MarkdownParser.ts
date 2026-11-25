@@ -359,7 +359,22 @@ export class MarkdownParser {
 
 	/** Split a Markdown table row into trimmed cell values (handles `\|`). */
 	private splitRow(row: string): string[] {
-		const parts = row.split(/(?<!\\)\|/);
+		// Split on unescaped pipes. (No regex lookbehind: it crashes on iOS < 16.4.)
+		const parts: string[] = [];
+		let cell = "";
+		for (let i = 0; i < row.length; i++) {
+			const c = row[i];
+			if (c === "\\" && row[i + 1] === "|") {
+				cell += "\\|";
+				i++;
+			} else if (c === "|") {
+				parts.push(cell);
+				cell = "";
+			} else {
+				cell += c;
+			}
+		}
+		parts.push(cell);
 		// Drop the empty leading/trailing cells produced by the outer pipes.
 		if (parts.length && parts[0].trim() === "") parts.shift();
 		if (parts.length && parts[parts.length - 1].trim() === "") parts.pop();

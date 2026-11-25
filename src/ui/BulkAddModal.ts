@@ -158,7 +158,7 @@ export class BulkAddModal extends Modal {
 	private report(status: HTMLElement, items: BulkItem[], failures: Failure[]): void {
 		status.empty();
 		const cards = items.reduce((n, it) => n + it.qty, 0);
-		status.createEl("div", {
+		status.createDiv({
 			text: `Added ${cards} card(s) from ${items.length} line(s).`,
 		});
 		const warned = items.filter((it) => it.warning);
@@ -167,7 +167,7 @@ export class BulkAddModal extends Modal {
 			for (const it of warned) wl.createEl("li", { text: `⚠ ${it.warning}` });
 		}
 		if (!failures.length) return;
-		status.createEl("div", {
+		status.createDiv({
 			text: `${failures.length} line(s) not recognized (left in the box above):`,
 			cls: "pokemon-collection-error",
 		});

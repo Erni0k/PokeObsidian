@@ -102,8 +102,6 @@ export class PokemonCollectionSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		containerEl.createEl("h2", { text: "Pokémon Collection settings" });
-
 		new Setting(containerEl)
 			.setName("Preferred language")
 			.setDesc("Language used for TCGdex API lookups (card names, images).")
@@ -290,11 +288,12 @@ export class PokemonCollectionSettingTab extends PluginSettingTab {
 					});
 			});
 
-		containerEl.createEl("h3", { text: "Condition pricing" });
-		containerEl.createEl("p", {
-			cls: "setting-item-description",
-			text: "Raw cards are priced as the market price (from the price source) × multiplier for their condition. Graded cards (with a Grade) are never auto-priced — enter their price by hand; price updates keep it.",
-		});
+		new Setting(containerEl)
+			.setName("Condition pricing")
+			.setDesc(
+				"Raw cards are priced as the market price (from the price source) × multiplier for their condition. Graded cards (with a Grade) are never auto-priced — enter their price by hand; price updates keep it."
+			)
+			.setHeading();
 		for (const cond of CONDITIONS) {
 			if (cond === "NM") continue;
 			new Setting(containerEl)
@@ -319,6 +318,8 @@ export class PokemonCollectionSettingTab extends PluginSettingTab {
 						});
 				});
 		}
+
+		new Setting(containerEl).setName("Images").setHeading();
 
 		new Setting(containerEl)
 			.setName("Enable image previews")
@@ -360,9 +361,9 @@ export class PokemonCollectionSettingTab extends PluginSettingTab {
 					});
 			});
 
-		containerEl.createEl("hr");
-		const actions = containerEl.createDiv();
-		new Setting(actions)
+		new Setting(containerEl).setName("Maintenance").setHeading();
+
+		new Setting(containerEl)
 			.setName("Clear API cache")
 			.setDesc("Remove cached TCGdex responses (price history is kept).")
 			.addButton((btn) => {

@@ -38,7 +38,7 @@ export class SetIndexService {
 
 	constructor(plugin: PokemonCollectionPlugin) {
 		this.plugin = plugin;
-		this.dir = plugin.manifest.dir ?? ".obsidian/plugins/pokemon-collection";
+		this.dir = plugin.manifest.dir ?? `${plugin.app.vault.configDir}/plugins/${plugin.manifest.id}`;
 	}
 
 	async load(): Promise<void> {

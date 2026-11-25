@@ -212,7 +212,7 @@ export class CardSearchModal extends Modal {
 
 	private scheduleSearch(): void {
 		if (this.searchTimer) window.clearTimeout(this.searchTimer);
-		this.searchTimer = window.setTimeout(() => this.runSearch(false), 350);
+		this.searchTimer = window.setTimeout(() => void this.runSearch(false), 350);
 	}
 
 	/**
@@ -406,11 +406,11 @@ export class CardSearchModal extends Modal {
 			}
 
 			const label = row.createDiv({ cls: "pokemon-collection-result-label" });
-			label.createEl("span", {
+			label.createSpan({
 				text: card.name,
 				cls: "pokemon-collection-result-name",
 			});
-			const metaEl = label.createEl("span", {
+			const metaEl = label.createSpan({
 				text: `#${card.localId ?? "?"} · `,
 				cls: "pokemon-collection-result-meta",
 			});

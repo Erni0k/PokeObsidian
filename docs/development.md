@@ -15,11 +15,28 @@ npm run build   # type-check (tsc) + production bundle (esbuild)
 
 To try a build, copy (or symlink) `main.js`, `manifest.json` and `styles.css` into `<vault>/.obsidian/plugins/pokemon-collection/` and reload Obsidian. A separate test vault is recommended.
 
+## Linting
+
+```bash
+npm run lint
+```
+
+This runs [`eslint-plugin-obsidianmd`](https://github.com/obsidianmd/eslint-plugin), the same rule set the Obsidian community directory uses for its automated review. Run it before every release.
+
 ## Releasing
 
-1. Update the version: `npm version patch|minor|major`. This runs `version-bump.mjs`, which updates `manifest.json` and `versions.json` (the new version mapped to `minAppVersion`).
-2. Obsidian requires the release tag to equal the version exactly, **without** a `v` prefix (e.g. `1.1.0`). npm prefixes tags with `v` by default, so either add `tag-version-prefix=""` to an `.npmrc` file, or tag manually: `git tag -a 1.1.0 -m "1.1.0"`.
-3. Run `npm run build`, push the commit and the tag, then create a GitHub release for the tag and attach `main.js`, `manifest.json` and `styles.css`.
+Releases are built and published by GitHub Actions (`.github/workflows/release.yml`) when a version tag is pushed.
+
+1. Set the new version in `manifest.json` and `package.json`, and add it to `versions.json` (mapped to the `minAppVersion` it needs). `npm version patch|minor|major --no-git-tag-version` does this for you.
+2. Commit and push.
+3. Tag the commit with the version **exactly**, without a `v` prefix, and push the tag:
+
+   ```bash
+   git tag -a 1.1.0 -m "1.1.0"
+   git push origin 1.1.0
+   ```
+
+The workflow checks that the tag matches `manifest.json`, lints, builds, generates a build provenance attestation and publishes a GitHub release with `main.js`, `manifest.json` and `styles.css`. Every new release is then reviewed automatically by the Obsidian community directory.
 
 ## Architecture
 

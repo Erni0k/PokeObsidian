@@ -149,7 +149,7 @@ export class GalleryBlock extends MarkdownRenderChild {
 		const root = this.containerEl;
 		root.empty();
 		root.addClass("pokemon-gallery");
-		root.style.setProperty("--pg-size", `${this.opts.size}px`);
+		root.setCssProps({ "--pg-size": `${this.opts.size}px` });
 
 		const head = root.createDiv({ cls: "pokemon-gallery-head" });
 		const title = head.createDiv({ cls: "pokemon-gallery-title" });

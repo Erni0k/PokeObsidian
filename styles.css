@@ -46,6 +46,11 @@
 	display: block;
 	margin: 0.5rem 0;
 	border-radius: 6px;
+	max-width: var(--pc-preview-size, 200px);
+}
+
+.pokemon-collection-full-width {
+	width: 100%;
 }
 
 .pokemon-collection-card-meta {

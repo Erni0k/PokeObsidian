@@ -105,7 +105,7 @@ export class CollectionService {
 	/** List type of a note from its frontmatter (default "collection"). */
 	listTypeOf(file: TFile): ListType {
 		const fm = this.plugin.app.metadataCache.getFileCache(file)?.frontmatter;
-		const raw = fm?.["pokemon-list"];
+		const raw: unknown = fm?.["pokemon-list"];
 		const v = typeof raw === "string" ? raw.trim().toLowerCase() : "";
 		return (LIST_TYPES as string[]).includes(v) ? (v as ListType) : "collection";
 	}

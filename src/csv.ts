@@ -35,7 +35,7 @@ function splitLine(line: string, delimiter: string): string[] {
 
 /** Parse CSV text into rows of cells (blank lines dropped). */
 export function parseCsv(input: string, delimiter?: string): string[][] {
-	const text = input.replace(/^﻿/, "");
+	const text = input.replace(/^\uFEFF/, "");
 	const d = delimiter ?? detectDelimiter(text);
 	const rows: string[][] = [];
 	let row: string[] = [];

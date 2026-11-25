@@ -150,14 +150,11 @@ async function applySort(
 					? "desc"
 					: "asc";
 
-		const sorted = plugin.markdown.sortEntries(
-			plugin.markdown.parseEntries(content),
-			field,
-			dir
-		);
-		const next = plugin.markdown.replaceSection(content, sorted);
-		if (next && next !== content) {
-			await plugin.app.vault.modify(file, next);
+		const md = plugin.markdown;
+		const sortText = (text: string): string =>
+			md.replaceSection(text, md.sortEntries(md.parseEntries(text), field, dir)) ?? text;
+		if (sortText(content) !== content) {
+			await plugin.app.vault.process(file, sortText);
 		}
 		sortState.set(path, { field, dir });
 	} catch (err) {

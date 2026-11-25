@@ -102,7 +102,7 @@ export class SetCompletionService {
 
 	constructor(plugin: PokemonCollectionPlugin) {
 		this.plugin = plugin;
-		this.dir = plugin.manifest.dir ?? ".obsidian/plugins/pokemon-collection";
+		this.dir = plugin.manifest.dir ?? `${plugin.app.vault.configDir}/plugins/${plugin.manifest.id}`;
 	}
 
 	async load(): Promise<void> {
@@ -190,7 +190,7 @@ export class SetCompletionService {
 
 		const prev = this.getSnapshot(setId, lang);
 		const prevById = new Map(prev?.cards.map((c) => [c.id, c]) ?? []);
-		const out: SetCardSlots[] = new Array(briefs.length);
+		const out = new Array<SetCardSlots>(briefs.length);
 		let done = 0;
 		progress({ done, total: briefs.length });
 
