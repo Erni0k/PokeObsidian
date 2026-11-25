@@ -2,7 +2,7 @@
 
 All notable changes to Pokemon Collection Manager. Versions follow [semantic versioning](https://semver.org/); each version is a [GitHub release](https://github.com/Erni0k/PokeObsidian/releases).
 
-## [Unreleased]
+## [1.1.2] — 2026-11-25
 
 ### Added
 - **Update prices** button on the dashboard and in the gallery. The existing **Refresh** buttons only redraw the view with the prices already in your notes; the new button fetches current prices first (the whole collection on the dashboard and in folder galleries, just the note's cards in a note gallery).
@@ -52,6 +52,7 @@ All notable changes to Pokemon Collection Manager. Versions follow [semantic ver
 
 First release: card search via TCGdex, collection tables in Markdown, variant selection, Cardmarket prices, sorting, the `pokemon-dashboard` block, adding cards from a Cardmarket link and manual cards.
 
+[1.1.2]: https://github.com/Erni0k/PokeObsidian/releases/tag/1.1.2
 [1.1.1]: https://github.com/Erni0k/PokeObsidian/releases/tag/1.1.1
 [1.1.0]: https://github.com/Erni0k/PokeObsidian/releases/tag/1.1.0
 [1.0.0]: https://github.com/Erni0k/PokeObsidian/releases/tag/1.0.0
